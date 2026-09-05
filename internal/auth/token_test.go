@@ -2,7 +2,6 @@ package auth
 
 import (
 	"bytes"
-	"regexp"
 	"testing"
 )
 
@@ -27,17 +26,5 @@ func TestSessionTokensAreRandomAndHashed(t *testing.T) {
 
 	if !bytes.Equal(firstHash, hashSessionToken(firstToken)) {
 		t.Fatal("session token hash is not deterministic")
-	}
-}
-
-func TestNewUUIDReturnsVersion4UUID(t *testing.T) {
-	identifier, err := newUUID()
-	if err != nil {
-		t.Fatalf("newUUID() returned an error: %v", err)
-	}
-
-	pattern := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
-	if !pattern.MatchString(identifier) {
-		t.Fatalf("newUUID() = %q, want a UUID v4", identifier)
 	}
 }

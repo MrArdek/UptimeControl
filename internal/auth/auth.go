@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/MrArdek/UptimeControl/internal/identity"
 )
 
 const (
@@ -126,7 +128,7 @@ func (service *Service) Login(ctx context.Context, email, password string) (Resu
 		return Result{}, fmt.Errorf("generate session token: %w", err)
 	}
 
-	sessionID, err := newUUID()
+	sessionID, err := identity.NewUUID()
 	if err != nil {
 		return Result{}, fmt.Errorf("generate session ID: %w", err)
 	}
@@ -178,12 +180,12 @@ func (service *Service) Logout(ctx context.Context, token string) error {
 }
 
 func (service *Service) newResult(email string) (Result, Session, error) {
-	userID, err := newUUID()
+	userID, err := identity.NewUUID()
 	if err != nil {
 		return Result{}, Session{}, fmt.Errorf("generate user ID: %w", err)
 	}
 
-	sessionID, err := newUUID()
+	sessionID, err := identity.NewUUID()
 	if err != nil {
 		return Result{}, Session{}, fmt.Errorf("generate session ID: %w", err)
 	}

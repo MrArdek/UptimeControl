@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/MrArdek/UptimeControl/internal/auth"
+	"github.com/MrArdek/UptimeControl/internal/sites"
 )
 
 const shutdownTimeout = 10 * time.Second
@@ -23,6 +24,14 @@ type authService interface {
 	Logout(context.Context, string) error
 }
 
+type siteService interface {
+	List(context.Context, string) ([]sites.Site, error)
+	Create(context.Context, string, sites.CreateInput) (sites.Site, error)
+	ByID(context.Context, string, string) (sites.Site, error)
+	Update(context.Context, string, string, sites.UpdateInput) (sites.Site, error)
+	Delete(context.Context, string, string) error
+}
+
 // Options controls security-sensitive HTTP behavior.
 type Options struct {
 	AllowedOrigin string
@@ -30,10 +39,16 @@ type Options struct {
 }
 
 // New creates the HTTP server with conservative timeouts and application routes.
-func New(address string, database databasePinger, authentication authService, options Options) *http.Server {
+func New(
+	address string,
+	database databasePinger,
+	authentication authService,
+	siteManagement siteService,
+	options Options,
+) *http.Server {
 	return &http.Server{
 		Addr:              address,
-		Handler:           newHandler(database, authentication, options),
+		Handler:           newHandler(database, authentication, siteManagement, options),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
@@ -46,7 +61,12 @@ func ShutdownContext() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), shutdownTimeout)
 }
 
-func newHandler(database databasePinger, authentication authService, options Options) http.Handler {
+func newHandler(
+	database databasePinger,
+	authentication authService,
+	siteManagement siteService,
+	options Options,
+) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/ready", readyHandler(database))
@@ -56,6 +76,10 @@ func newHandler(database databasePinger, authentication authService, options Opt
 	mux.HandleFunc("/api/v1/auth/login", authenticationHandlers.login)
 	mux.HandleFunc("/api/v1/auth/logout", authenticationHandlers.logout)
 	mux.HandleFunc("/api/v1/auth/me", authenticationHandlers.me)
+
+	siteHandlers := newSiteHandlers(authentication, siteManagement, options)
+	mux.HandleFunc("/api/v1/sites", siteHandlers.collection)
+	mux.HandleFunc("/api/v1/sites/", siteHandlers.item)
 
 	return mux
 }

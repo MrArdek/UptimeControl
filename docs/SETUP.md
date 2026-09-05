@@ -1,6 +1,6 @@
 # Запуск проекта
 
-Дата актуализации: 2026-09-05
+Дата актуализации: 2026-09-06
 
 ## Требования
 
@@ -170,11 +170,41 @@ curl -i -b "$UPTIME_COOKIE_JAR" -c "$UPTIME_COOKIE_JAR" \
   -X POST http://localhost:8080/api/v1/auth/logout
 ```
 
-После проверки удалите временный файл с токеном:
+Пока не удаляйте временный файл: он понадобится для проверки управления сайтами. После всех проверок выполните:
 
 ```bash
 unlink "$UPTIME_COOKIE_JAR"
 ```
+
+## Проверка управления сайтами
+
+До удаления временного cookie-файла создайте сайт:
+
+```bash
+curl -i -b "$UPTIME_COOKIE_JAR" \
+  -H 'Content-Type: application/json' \
+  -H 'Origin: http://localhost:8080' \
+  -d '{"name":"Main site","url":"https://example.com","check_interval_seconds":60}' \
+  http://localhost:8080/api/v1/sites
+```
+
+Получите список:
+
+```bash
+curl -i -b "$UPTIME_COOKIE_JAR" \
+  http://localhost:8080/api/v1/sites
+```
+
+Для удаления замените `SITE_ID` на идентификатор из ответа создания:
+
+```bash
+curl -i -b "$UPTIME_COOKIE_JAR" \
+  -H 'Origin: http://localhost:8080' \
+  -H 'X-Confirm-Delete: true' \
+  -X DELETE http://localhost:8080/api/v1/sites/SITE_ID
+```
+
+Удаление без заголовка подтверждения отклоняется.
 
 ## Тестовый запуск на сервере
 

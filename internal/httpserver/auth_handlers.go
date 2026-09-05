@@ -176,30 +176,37 @@ func (handlers *authHandlers) me(response http.ResponseWriter, request *http.Req
 }
 
 func (handlers *authHandlers) validOrigin(request *http.Request) bool {
-	origin := request.Header.Get("Origin")
-	return origin == "" || origin == handlers.options.AllowedOrigin
+	return originAllowed(request, handlers.options.AllowedOrigin)
 }
 
 func decodeCredentials(response http.ResponseWriter, request *http.Request) (credentialsRequest, error) {
-	mediaType, _, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
-	if err != nil || mediaType != "application/json" {
-		return credentialsRequest{}, errors.New("content type must be application/json")
-	}
-
-	request.Body = http.MaxBytesReader(response, request.Body, maximumAuthBody)
-	decoder := json.NewDecoder(request.Body)
-	decoder.DisallowUnknownFields()
-
 	var credentials credentialsRequest
-	if err := decoder.Decode(&credentials); err != nil {
+	if err := decodeJSONRequest(response, request, maximumAuthBody, &credentials); err != nil {
 		return credentialsRequest{}, err
 	}
 
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return credentialsRequest{}, errors.New("request must contain one JSON object")
+	return credentials, nil
+}
+
+func decodeJSONRequest(response http.ResponseWriter, request *http.Request, maximumBytes int64, destination any) error {
+	mediaType, _, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		return errors.New("content type must be application/json")
 	}
 
-	return credentials, nil
+	request.Body = http.MaxBytesReader(response, request.Body, maximumBytes)
+	decoder := json.NewDecoder(request.Body)
+	decoder.DisallowUnknownFields()
+
+	if err := decoder.Decode(destination); err != nil {
+		return err
+	}
+
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return errors.New("request must contain one JSON object")
+	}
+
+	return nil
 }
 
 func sessionToken(request *http.Request) (string, error) {

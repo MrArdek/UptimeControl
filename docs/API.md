@@ -1,6 +1,6 @@
 # API
 
-Дата актуализации: 2026-09-05
+Дата актуализации: 2026-09-06
 
 Базовый адрес при настройках по умолчанию: `http://localhost:8080`.
 
@@ -192,4 +192,101 @@ Body имеет тот же формат, что и регистрация.
 
 - `401 unauthorized` — действующая сессия отсутствует;
 - `403 invalid_origin` — браузерный Origin не разрешён;
+- `500 internal_error`.
+
+## Сайты
+
+Все маршруты требуют действующую cookie-сессию. Пользователь получает только собственные сайты; чужой и несуществующий идентификатор возвращают одинаковый `404`.
+
+### GET /api/v1/sites
+
+Возвращает до 100 активных сайтов текущего пользователя, от новых к старым.
+
+```json
+{
+  "sites": [
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "name": "Main site",
+      "url": "https://example.com",
+      "check_interval_seconds": 60,
+      "enabled": true,
+      "created_at": "2026-09-05T18:00:00Z",
+      "updated_at": "2026-09-05T18:00:00Z"
+    }
+  ]
+}
+```
+
+Пагинация пока не реализована.
+
+### POST /api/v1/sites
+
+Создаёт сайт для текущего пользователя.
+
+```json
+{
+  "name": "Main site",
+  "url": "https://example.com",
+  "check_interval_seconds": 60
+}
+```
+
+- `name` — от 1 до 100 символов;
+- `url` — публичный абсолютный HTTP/HTTPS URL, максимум 2048 байт;
+- `check_interval_seconds` — необязательное число от 30 до 86400, по умолчанию 60.
+
+Успех: `201 Created`, заголовок `Location` и объект `site`.
+
+Ошибки:
+
+- `400 invalid_request`, `invalid_name`, `invalid_url` или `invalid_interval`;
+- `401 unauthorized`;
+- `403 invalid_origin`;
+- `409 site_exists` — такой активный URL уже есть у пользователя;
+- `500 internal_error`.
+
+### GET /api/v1/sites/{siteID}
+
+Возвращает один активный сайт текущего пользователя.
+
+- `401 unauthorized`;
+- `404 site_not_found` — сайт отсутствует, удалён или принадлежит другому пользователю;
+- `500 internal_error`.
+
+### PATCH /api/v1/sites/{siteID}
+
+Изменяет одно или несколько полей:
+
+```json
+{
+  "name": "Updated site",
+  "url": "https://example.com/health",
+  "check_interval_seconds": 300,
+  "enabled": false
+}
+```
+
+Успех: `200 OK` и обновлённый объект `site`.
+
+Дополнительная ошибка `400 empty_update` означает, что не передано ни одного изменяемого поля. Остальные проверки совпадают с созданием.
+
+### DELETE /api/v1/sites/{siteID}
+
+Мягко удаляет и выключает сайт. История остаётся в базе.
+
+Обязательный заголовок:
+
+```text
+X-Confirm-Delete: true
+```
+
+Успех: `204 No Content`.
+
+Ошибки:
+
+- `400 confirmation_required` — отсутствует явное подтверждение;
+- `401 unauthorized`;
+- `403 invalid_origin`;
+- `404 site_not_found`;
 - `500 internal_error`.

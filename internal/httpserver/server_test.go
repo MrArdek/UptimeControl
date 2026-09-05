@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/MrArdek/UptimeControl/internal/auth"
+	"github.com/MrArdek/UptimeControl/internal/sites"
 )
 
 type stubDatabase struct {
@@ -38,8 +39,30 @@ func (stubAuthService) Logout(context.Context, string) error {
 	return nil
 }
 
+type stubSiteService struct{}
+
+func (stubSiteService) List(context.Context, string) ([]sites.Site, error) {
+	return []sites.Site{}, nil
+}
+
+func (stubSiteService) Create(context.Context, string, sites.CreateInput) (sites.Site, error) {
+	return sites.Site{}, nil
+}
+
+func (stubSiteService) ByID(context.Context, string, string) (sites.Site, error) {
+	return sites.Site{}, nil
+}
+
+func (stubSiteService) Update(context.Context, string, string, sites.UpdateInput) (sites.Site, error) {
+	return sites.Site{}, nil
+}
+
+func (stubSiteService) Delete(context.Context, string, string) error {
+	return nil
+}
+
 func testHandler(database stubDatabase) http.Handler {
-	return newHandler(database, stubAuthService{}, Options{})
+	return newHandler(database, stubAuthService{}, stubSiteService{}, Options{})
 }
 
 func TestHealthHandler(t *testing.T) {

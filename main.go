@@ -16,6 +16,7 @@ import (
 	"github.com/MrArdek/UptimeControl/internal/httpserver"
 	"github.com/MrArdek/UptimeControl/internal/migrations"
 	"github.com/MrArdek/UptimeControl/internal/postgres"
+	"github.com/MrArdek/UptimeControl/internal/sites"
 )
 
 const startupTimeout = 10 * time.Second
@@ -50,7 +51,8 @@ func run() error {
 	logger.Info("database connected and migrations applied")
 
 	authentication := auth.NewService(auth.NewPostgresStore(database))
-	server := httpserver.New(cfg.HTTPAddress, database, authentication, httpserver.Options{
+	siteManagement := sites.NewService(sites.NewPostgresStore(database))
+	server := httpserver.New(cfg.HTTPAddress, database, authentication, siteManagement, httpserver.Options{
 		AllowedOrigin: cfg.PublicOrigin,
 		CookieSecure:  cfg.SessionCookieSecure,
 	})

@@ -1,6 +1,6 @@
 # Карта проекта
 
-Дата актуализации: 2026-09-05
+Дата актуализации: 2026-09-06
 
 ## Текущее дерево
 
@@ -42,13 +42,25 @@ UptimeControl/
 │   │   ├── rate_limiter.go
 │   │   ├── rate_limiter_test.go
 │   │   ├── server.go
-│   │   └── server_test.go
+│   │   ├── server_test.go
+│   │   ├── site_handlers.go
+│   │   └── site_handlers_test.go
+│   ├── identity/
+│   │   ├── uuid.go
+│   │   └── uuid_test.go
 │   ├── migrations/
 │   │   ├── sql/
-│   │   │   └── 000001_initial_schema.up.sql
+│   │   │   ├── 000001_initial_schema.up.sql
+│   │   │   ├── 000002_unique_active_site_url.up.sql
+│   │   │   └── README.md
 │   │   └── migrations.go
-│   └── postgres/
-│       └── postgres.go
+│   ├── postgres/
+│   │   ├── postgres.go
+│   │   └── postgres_test.go
+│   └── sites/
+│       ├── postgres_store.go
+│       ├── sites.go
+│       └── sites_test.go
 ├── .env.example
 ├── .gitignore
 ├── go.mod
@@ -82,9 +94,17 @@ UptimeControl/
 
 Содержит регистрацию, вход, проверку и отзыв сессий, Argon2id-хеширование паролей, генерацию токенов и PostgreSQL-хранилище. Рядом находятся модульные тесты.
 
+### `/internal/sites`
+
+Содержит бизнес-правила сайтов, проверку URL и PostgreSQL-запросы с обязательным владельцем.
+
+### `/internal/identity`
+
+Генерирует и проверяет UUID, общие для пользователей, сессий и сайтов.
+
 ### `/internal/httpserver`
 
-Создаёт HTTP-сервер, задаёт таймауты и регистрирует служебные и auth-маршруты. Здесь находятся HTTP-обработчики, Origin-проверка, лимит запросов и тесты.
+Создаёт HTTP-сервер, задаёт таймауты и регистрирует служебные, auth- и site-маршруты. Здесь находятся HTTP-обработчики, Origin-проверка, лимит запросов и тесты.
 
 ### `/internal/postgres`
 
@@ -136,6 +156,7 @@ UptimeControl/
 | Конфигурация | `internal/config` | Адреса, PostgreSQL, origin и cookie |
 | HTTP-сервер | `internal/httpserver` | Служебные и auth-маршруты |
 | Авторизация | `internal/auth` | Регистрация, вход, сессии и Argon2id |
+| Сайты | `internal/sites` | CRUD, проверка владельца и URL |
 | PostgreSQL | `internal/postgres` | Пул соединений и проверка подключения |
 | Миграции | `internal/migrations` | Начальная схема применяется автоматически |
 | Аналитика | `api/v1/ui/analytics.go` | Пустая заготовка |
@@ -146,7 +167,7 @@ UptimeControl/
 | API | `docs/API.md` | Служебные и auth-маршруты |
 | База данных | `docs/DATABASE.md` | PostgreSQL подключён, начальная схема создана |
 | Frontend | — | Не создан |
-| Тесты | `internal/**/*_test.go` | Конфигурация, `/health` и `/ready` |
+| Тесты | `internal/**/*_test.go` | Конфигурация, auth, сайты и HTTP |
 
 ## Предлагаемая будущая структура
 
@@ -154,7 +175,6 @@ UptimeControl/
 
 ```text
 cmd/                 точки входа backend, check node и server agent
-internal/sites/      сайты пользователя и настройки проверок
 internal/monitoring/ планировщик, проверки и инциденты
 web/                 frontend на TypeScript/React или Next.js
 tracker/             JavaScript-трекер
