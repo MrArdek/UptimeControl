@@ -86,7 +86,7 @@ func (handlers *authHandlers) register(response http.ResponseWriter, request *ht
 		return
 	}
 
-	setSessionCookie(response, result, handlers.options.CookieSecure)
+	setSessionCookie(response, result, handlers.options)
 	writeJSON(response, http.StatusCreated, userResponse{User: result.User})
 }
 
@@ -122,7 +122,7 @@ func (handlers *authHandlers) login(response http.ResponseWriter, request *http.
 		return
 	}
 
-	setSessionCookie(response, result, handlers.options.CookieSecure)
+	setSessionCookie(response, result, handlers.options)
 	writeJSON(response, http.StatusOK, userResponse{User: result.User})
 }
 
@@ -139,12 +139,12 @@ func (handlers *authHandlers) logout(response http.ResponseWriter, request *http
 
 	token, err := sessionToken(request)
 	if err != nil || handlers.service.Logout(request.Context(), token) != nil {
-		clearSessionCookie(response, handlers.options.CookieSecure)
+		clearSessionCookie(response, handlers.options)
 		writeError(response, http.StatusUnauthorized, "unauthorized", "authentication is required")
 		return
 	}
 
-	clearSessionCookie(response, handlers.options.CookieSecure)
+	clearSessionCookie(response, handlers.options)
 	response.Header().Set("Cache-Control", "no-store")
 	response.WriteHeader(http.StatusNoContent)
 }
@@ -163,7 +163,7 @@ func (handlers *authHandlers) me(response http.ResponseWriter, request *http.Req
 
 	user, err := handlers.service.CurrentUser(request.Context(), token)
 	if errors.Is(err, auth.ErrUnauthorized) {
-		clearSessionCookie(response, handlers.options.CookieSecure)
+		clearSessionCookie(response, handlers.options)
 		writeError(response, http.StatusUnauthorized, "unauthorized", "authentication is required")
 		return
 	}
@@ -218,7 +218,7 @@ func sessionToken(request *http.Request) (string, error) {
 	return cookie.Value, nil
 }
 
-func setSessionCookie(response http.ResponseWriter, result auth.Result, secure bool) {
+func setSessionCookie(response http.ResponseWriter, result auth.Result, options Options) {
 	maxAge := int(time.Until(result.ExpiresAt).Seconds())
 	if maxAge < 1 {
 		maxAge = 1
@@ -227,25 +227,33 @@ func setSessionCookie(response http.ResponseWriter, result auth.Result, secure b
 	http.SetCookie(response, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    result.Token,
-		Path:     "/",
+		Path:     cookiePath(options.BasePath),
 		Expires:  result.ExpiresAt,
 		MaxAge:   maxAge,
 		HttpOnly: true,
-		Secure:   secure,
+		Secure:   options.CookieSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
 }
 
-func clearSessionCookie(response http.ResponseWriter, secure bool) {
+func clearSessionCookie(response http.ResponseWriter, options Options) {
 	http.SetCookie(response, &http.Cookie{
 		Name:     sessionCookieName,
-		Path:     "/",
+		Path:     cookiePath(options.BasePath),
 		Expires:  time.Unix(1, 0),
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   secure,
+		Secure:   options.CookieSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+func cookiePath(basePath string) string {
+	if basePath == "" {
+		return "/"
+	}
+
+	return basePath
 }
 
 func methodNotAllowed(response http.ResponseWriter, allowedMethod string) {

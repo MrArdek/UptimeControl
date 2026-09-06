@@ -19,6 +19,10 @@ func TestLoadUsesDefaultHTTPAddress(t *testing.T) {
 		t.Fatalf("PublicOrigin = %q, want default origin", cfg.PublicOrigin)
 	}
 
+	if cfg.BasePath != "" {
+		t.Fatalf("BasePath = %q, want root", cfg.BasePath)
+	}
+
 	if !cfg.SessionCookieSecure {
 		t.Fatal("SessionCookieSecure = false, want secure default")
 	}
@@ -92,5 +96,32 @@ func TestLoadRejectsPublicOriginWithPath(t *testing.T) {
 
 	if _, err := Load(); err == nil {
 		t.Fatal("Load() returned no error for PUBLIC_ORIGIN with a path")
+	}
+}
+
+func TestLoadAcceptsAndNormalizesBasePath(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/uptime_control")
+	t.Setenv("BASE_PATH", "/uptimec/")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned an error: %v", err)
+	}
+
+	if cfg.BasePath != "/uptimec" {
+		t.Fatalf("BasePath = %q, want %q", cfg.BasePath, "/uptimec")
+	}
+}
+
+func TestLoadRejectsInvalidBasePath(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/uptime_control")
+
+	for _, basePath := range []string{"uptimec", "/uptimec//admin", "/../uptimec", "/uptimec?debug=true"} {
+		t.Run(basePath, func(t *testing.T) {
+			t.Setenv("BASE_PATH", basePath)
+			if _, err := Load(); err == nil {
+				t.Fatalf("Load() returned no error for BASE_PATH %q", basePath)
+			}
+		})
 	}
 }

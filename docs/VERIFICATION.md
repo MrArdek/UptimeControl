@@ -25,6 +25,7 @@ go build ./...
 export DATABASE_URL=postgresql://localhost/uptime_control
 export HTTP_ADDR=127.0.0.1:8080
 export PUBLIC_ORIGIN=http://127.0.0.1:8080
+export BASE_PATH=
 export SESSION_COOKIE_SECURE=false
 go run .
 ```
@@ -65,6 +66,7 @@ curl -i http://127.0.0.1:8080/ready
 - наличие таблиц `users`, `sessions`, `sites`, `uptime_checks`, `incidents`, `schema_migrations`;
 - повторный запуск без повторного применения миграции;
 - ответы `/health` и `/ready` со статусом `200`;
+- маршруты с `BASE_PATH=/uptimec` доступны только под `/uptimec`, а cookie получает `Path=/uptimec`;
 - завершение собранного бинарного файла по `SIGINT` с кодом `0`;
 - регистрация пользователя со статусом `201`;
 - нормализация email к нижнему регистру;

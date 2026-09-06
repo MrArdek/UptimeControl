@@ -65,6 +65,29 @@ func testHandler(database stubDatabase) http.Handler {
 	return newHandler(database, stubAuthService{}, stubSiteService{}, Options{})
 }
 
+func TestRoutesCanBeMountedUnderBasePath(t *testing.T) {
+	handler := newHandler(
+		stubDatabase{},
+		stubAuthService{},
+		stubSiteService{},
+		Options{BasePath: "/uptimec"},
+	)
+
+	prefixedRequest := httptest.NewRequest(http.MethodGet, "/uptimec/health", nil)
+	prefixedResponse := httptest.NewRecorder()
+	handler.ServeHTTP(prefixedResponse, prefixedRequest)
+	if prefixedResponse.Code != http.StatusOK {
+		t.Fatalf("prefixed status = %d, want %d", prefixedResponse.Code, http.StatusOK)
+	}
+
+	rootRequest := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rootResponse := httptest.NewRecorder()
+	handler.ServeHTTP(rootResponse, rootRequest)
+	if rootResponse.Code != http.StatusNotFound {
+		t.Fatalf("root status = %d, want %d", rootResponse.Code, http.StatusNotFound)
+	}
+}
+
 func TestHealthHandler(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/health", nil)
 	response := httptest.NewRecorder()

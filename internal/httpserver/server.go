@@ -35,6 +35,7 @@ type siteService interface {
 // Options controls security-sensitive HTTP behavior.
 type Options struct {
 	AllowedOrigin string
+	BasePath      string
 	CookieSecure  bool
 }
 
@@ -68,20 +69,24 @@ func newHandler(
 	options Options,
 ) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/health", healthHandler)
-	mux.HandleFunc("/ready", readyHandler(database))
+	mux.HandleFunc(routePath(options.BasePath, "/health"), healthHandler)
+	mux.HandleFunc(routePath(options.BasePath, "/ready"), readyHandler(database))
 
 	authenticationHandlers := newAuthHandlers(authentication, options)
-	mux.HandleFunc("/api/v1/auth/register", authenticationHandlers.register)
-	mux.HandleFunc("/api/v1/auth/login", authenticationHandlers.login)
-	mux.HandleFunc("/api/v1/auth/logout", authenticationHandlers.logout)
-	mux.HandleFunc("/api/v1/auth/me", authenticationHandlers.me)
+	mux.HandleFunc(routePath(options.BasePath, "/api/v1/auth/register"), authenticationHandlers.register)
+	mux.HandleFunc(routePath(options.BasePath, "/api/v1/auth/login"), authenticationHandlers.login)
+	mux.HandleFunc(routePath(options.BasePath, "/api/v1/auth/logout"), authenticationHandlers.logout)
+	mux.HandleFunc(routePath(options.BasePath, "/api/v1/auth/me"), authenticationHandlers.me)
 
 	siteHandlers := newSiteHandlers(authentication, siteManagement, options)
-	mux.HandleFunc("/api/v1/sites", siteHandlers.collection)
-	mux.HandleFunc("/api/v1/sites/", siteHandlers.item)
+	mux.HandleFunc(routePath(options.BasePath, "/api/v1/sites"), siteHandlers.collection)
+	mux.HandleFunc(routePath(options.BasePath, "/api/v1/sites/"), siteHandlers.item)
 
 	return mux
+}
+
+func routePath(basePath, endpoint string) string {
+	return basePath + endpoint
 }
 
 func healthHandler(response http.ResponseWriter, request *http.Request) {

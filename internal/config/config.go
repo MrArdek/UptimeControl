@@ -17,6 +17,7 @@ type Config struct {
 	HTTPAddress         string
 	DatabaseURL         string
 	PublicOrigin        string
+	BasePath            string
 	SessionCookieSecure bool
 }
 
@@ -45,6 +46,11 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("PUBLIC_ORIGIN: %w", err)
 	}
 
+	basePath, err := normalizeBasePath(os.Getenv("BASE_PATH"))
+	if err != nil {
+		return Config{}, fmt.Errorf("BASE_PATH: %w", err)
+	}
+
 	cookieSecure, err := parseCookieSecure(os.Getenv("SESSION_COOKIE_SECURE"))
 	if err != nil {
 		return Config{}, fmt.Errorf("SESSION_COOKIE_SECURE: %w", err)
@@ -54,8 +60,44 @@ func Load() (Config, error) {
 		HTTPAddress:         address,
 		DatabaseURL:         databaseURL,
 		PublicOrigin:        publicOrigin,
+		BasePath:            basePath,
 		SessionCookieSecure: cookieSecure,
 	}, nil
+}
+
+func normalizeBasePath(value string) (string, error) {
+	basePath := strings.TrimSpace(value)
+	if basePath == "" || basePath == "/" {
+		return "", nil
+	}
+
+	if !strings.HasPrefix(basePath, "/") {
+		return "", fmt.Errorf("must start with /")
+	}
+	if strings.ContainsAny(basePath, "?#\\") {
+		return "", fmt.Errorf("must not contain a query, fragment, or backslash")
+	}
+
+	basePath = strings.TrimSuffix(basePath, "/")
+	for _, segment := range strings.Split(strings.TrimPrefix(basePath, "/"), "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return "", fmt.Errorf("must contain only non-empty path segments")
+		}
+		for _, character := range segment {
+			if !isBasePathCharacter(character) {
+				return "", fmt.Errorf("contains unsupported character %q", character)
+			}
+		}
+	}
+
+	return basePath, nil
+}
+
+func isBasePathCharacter(character rune) bool {
+	return character >= 'a' && character <= 'z' ||
+		character >= 'A' && character <= 'Z' ||
+		character >= '0' && character <= '9' ||
+		strings.ContainsRune("-._~", character)
 }
 
 func validatePublicOrigin(origin string) error {

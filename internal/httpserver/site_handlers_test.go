@@ -101,6 +101,43 @@ func TestCreateSiteHandler(t *testing.T) {
 	}
 }
 
+func TestCreateSiteLocationIncludesBasePath(t *testing.T) {
+	createdSite := sites.Site{
+		ID:                   "00000000-0000-4000-8000-000000000001",
+		Name:                 "API",
+		URL:                  "https://example.com/health",
+		CheckIntervalSeconds: 60,
+		Enabled:              true,
+		CreatedAt:            time.Now(),
+		UpdatedAt:            time.Now(),
+	}
+	service := &configurableSiteService{created: createdSite}
+	authentication := &configurableAuthService{currentUser: auth.User{ID: "owner-id"}}
+	handlers := newSiteHandlers(authentication, service, Options{
+		AllowedOrigin: "https://example.com",
+		BasePath:      "/uptimec",
+	})
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/uptimec/api/v1/sites",
+		strings.NewReader(`{"name":"API","url":"https://example.com/health"}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", "https://example.com")
+	addSessionCookie(request)
+	response := httptest.NewRecorder()
+
+	handlers.collection(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body: %s", response.Code, http.StatusCreated, response.Body.String())
+	}
+	wantLocation := "/uptimec/api/v1/sites/" + createdSite.ID
+	if location := response.Header().Get("Location"); location != wantLocation {
+		t.Fatalf("Location = %q, want %q", location, wantLocation)
+	}
+}
+
 func TestSiteHandlersRequireAuthentication(t *testing.T) {
 	authentication := &configurableAuthService{currentError: auth.ErrUnauthorized}
 	handlers := newSiteHandlers(authentication, &configurableSiteService{}, Options{})

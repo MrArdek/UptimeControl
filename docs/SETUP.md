@@ -38,6 +38,7 @@ brew services start postgresql@18
 HTTP_ADDR=:8080
 DATABASE_URL=postgresql://localhost/uptime_control
 PUBLIC_ORIGIN=http://localhost:8080
+BASE_PATH=
 SESSION_COOKIE_SECURE=false
 ```
 
@@ -48,7 +49,16 @@ SESSION_COOKIE_SECURE=false
 - Реальный пароль БД хранится только в локальном `.env` или менеджере секретов.
 - Приложение не выводит `DATABASE_URL` в лог.
 - `PUBLIC_ORIGIN` — внешний адрес frontend/API без пути; по умолчанию `http://localhost:8080`.
+- `BASE_PATH` — необязательный путь установки, например `/uptimec`. Пустое значение означает корень сайта.
 - `SESSION_COOKIE_SECURE` по умолчанию `true`. Значение `false` допустимо только для локального HTTP.
+
+Для адреса `https://igra.ru/uptimec` значения разделяются так:
+
+```text
+PUBLIC_ORIGIN=https://igra.ru
+BASE_PATH=/uptimec
+SESSION_COOKIE_SECURE=true
+```
 
 `.env` не загружается автоматически. Варианты локального запуска:
 
@@ -67,6 +77,8 @@ DATABASE_URL=postgresql://localhost/uptime_control SESSION_COOKIE_SECURE=false g
 ```
 
 При первом запуске приложение подключится к PostgreSQL и применит ещё не выполненные миграции. После этого сервер будет доступен по адресу `http://localhost:8080`.
+
+Если задан `BASE_PATH=/uptimec`, локальные маршруты будут начинаться с `http://localhost:8080/uptimec`.
 
 ## Проверка состояния
 
@@ -216,5 +228,16 @@ DATABASE_URL=postgresql://DB_HOST/DB_NAME HTTP_ADDR=127.0.0.1:8080 ./uptime-cont
 ```
 
 `DB_HOST` и `DB_NAME` нужно заменить настройками сервера. Пароль безопаснее передавать через менеджер секретов или защищённый файл окружения, а не записывать в командную историю.
+
+Для запуска под существующим доменом добавьте `PUBLIC_ORIGIN` и `BASE_PATH`:
+
+```bash
+DATABASE_URL=postgresql://DB_HOST/DB_NAME \
+HTTP_ADDR=127.0.0.1:8080 \
+PUBLIC_ORIGIN=https://igra.ru \
+BASE_PATH=/uptimec \
+SESSION_COOKIE_SECURE=true \
+./uptime-control
+```
 
 Это пока тестовый запуск. Перед публичным production-развёртыванием ещё нужны reverse proxy, TLS, отдельный системный пользователь, сервисный менеджер, firewall и резервные копии.

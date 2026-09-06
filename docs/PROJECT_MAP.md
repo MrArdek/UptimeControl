@@ -88,7 +88,7 @@ UptimeControl/
 
 ### `/internal/config`
 
-Читает и проверяет `HTTP_ADDR`, обязательный `DATABASE_URL`, `PUBLIC_ORIGIN` и `SESSION_COOKIE_SECURE`. Рядом находятся модульные тесты.
+Читает и проверяет `HTTP_ADDR`, обязательный `DATABASE_URL`, `PUBLIC_ORIGIN`, `BASE_PATH` и `SESSION_COOKIE_SECURE`. Рядом находятся модульные тесты.
 
 ### `/internal/auth`
 
@@ -96,7 +96,7 @@ UptimeControl/
 
 ### `/internal/sites`
 
-Содержит бизнес-правила сайтов, проверку URL и PostgreSQL-запросы с обязательным владельцем.
+Содержит текущие бизнес-правила HTTP-целей, проверку URL и PostgreSQL-запросы с обязательным владельцем. Название `sites` временное до миграции на `projects` и `monitors`.
 
 ### `/internal/identity`
 
@@ -153,10 +153,10 @@ UptimeControl/
 | Область | Расположение | Состояние |
 | --- | --- | --- |
 | Точка входа | `main.go` | Запуск и завершение HTTP-сервера |
-| Конфигурация | `internal/config` | Адреса, PostgreSQL, origin и cookie |
+| Конфигурация | `internal/config` | Адреса, PostgreSQL, origin, base path и cookie |
 | HTTP-сервер | `internal/httpserver` | Служебные и auth-маршруты |
 | Авторизация | `internal/auth` | Регистрация, вход, сессии и Argon2id |
-| Сайты | `internal/sites` | CRUD, проверка владельца и URL |
+| HTTP-цели (временно sites) | `internal/sites` | CRUD, проверка владельца и URL; ожидает миграции к monitors |
 | PostgreSQL | `internal/postgres` | Пул соединений и проверка подключения |
 | Миграции | `internal/migrations` | Начальная схема применяется автоматически |
 | Аналитика | `api/v1/ui/analytics.go` | Пустая заготовка |
@@ -176,6 +176,7 @@ UptimeControl/
 ```text
 cmd/                 точки входа backend, check node и server agent
 internal/monitoring/ планировщик, проверки и инциденты
+internal/projects/   проекты и их monitors после миграции модели
 web/                 frontend на TypeScript/React или Next.js
 tracker/             JavaScript-трекер
 agent/               код Server Agent, если он не вынесен в отдельный модуль

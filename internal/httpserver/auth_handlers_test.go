@@ -49,6 +49,7 @@ func TestRegisterHandlerSetsSecureSessionCookie(t *testing.T) {
 	}}
 	handlers := newAuthHandlers(service, Options{
 		AllowedOrigin: "https://app.example.com",
+		BasePath:      "/uptimec",
 		CookieSecure:  true,
 	})
 	request := httptest.NewRequest(
@@ -77,6 +78,9 @@ func TestRegisterHandlerSetsSecureSessionCookie(t *testing.T) {
 	}
 	if !cookie.HttpOnly || !cookie.Secure || cookie.SameSite != http.SameSiteLaxMode {
 		t.Fatalf("session cookie flags are unsafe: %#v", cookie)
+	}
+	if cookie.Path != "/uptimec" {
+		t.Fatalf("session cookie path = %q, want %q", cookie.Path, "/uptimec")
 	}
 }
 

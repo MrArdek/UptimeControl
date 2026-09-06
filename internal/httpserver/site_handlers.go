@@ -58,7 +58,7 @@ func (handlers *siteHandlers) collection(response http.ResponseWriter, request *
 }
 
 func (handlers *siteHandlers) item(response http.ResponseWriter, request *http.Request) {
-	siteID := strings.TrimPrefix(request.URL.Path, "/api/v1/sites/")
+	siteID := strings.TrimPrefix(request.URL.Path, routePath(handlers.options.BasePath, "/api/v1/sites/"))
 	if siteID == "" || strings.Contains(siteID, "/") {
 		writeError(response, http.StatusNotFound, "site_not_found", "site was not found")
 		return
@@ -117,7 +117,7 @@ func (handlers *siteHandlers) create(response http.ResponseWriter, request *http
 		return
 	}
 
-	response.Header().Set("Location", "/api/v1/sites/"+site.ID)
+	response.Header().Set("Location", routePath(handlers.options.BasePath, "/api/v1/sites/"+site.ID))
 	writeJSON(response, http.StatusCreated, siteResponse{Site: site})
 }
 
@@ -205,7 +205,7 @@ func (handlers *siteHandlers) authorize(
 
 	user, err := handlers.authentication.CurrentUser(request.Context(), token)
 	if errors.Is(err, auth.ErrUnauthorized) {
-		clearSessionCookie(response, handlers.options.CookieSecure)
+		clearSessionCookie(response, handlers.options)
 		writeError(response, http.StatusUnauthorized, "unauthorized", "authentication is required")
 		return auth.User{}, false
 	}

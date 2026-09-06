@@ -54,6 +54,7 @@ func run() error {
 	siteManagement := sites.NewService(sites.NewPostgresStore(database))
 	server := httpserver.New(cfg.HTTPAddress, database, authentication, siteManagement, httpserver.Options{
 		AllowedOrigin: cfg.PublicOrigin,
+		BasePath:      cfg.BasePath,
 		CookieSecure:  cfg.SessionCookieSecure,
 	})
 	serverErrors := make(chan error, 1)
@@ -62,7 +63,7 @@ func run() error {
 		serverErrors <- server.ListenAndServe()
 	}()
 
-	logger.Info("http server started", "address", cfg.HTTPAddress)
+	logger.Info("http server started", "address", cfg.HTTPAddress, "base_path", cfg.BasePath)
 
 	shutdownSignals := make(chan os.Signal, 1)
 	signal.Notify(shutdownSignals, syscall.SIGINT, syscall.SIGTERM)

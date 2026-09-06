@@ -1,5 +1,50 @@
 # Журнал AI-работ
 
+## 2026-09-06 — Начат переход к self-hosted-проектам и URL-префиксу
+
+### Что сделано
+
+- Основной способ поставки изменён на self-hosted: приложение устанавливается на сервер пользователя.
+- Добавлена переменная `BASE_PATH` для работы по адресу вроде `https://igra.ru/uptimec`.
+- Все служебные, auth- и site-маршруты получают настроенный префикс.
+- Cookie сессии ограничивается `BASE_PATH`, чтобы не отправляться другим разделам того же домена.
+- Заголовок `Location` API учитывает URL-префикс.
+- Зафиксирована будущая модель: универсальный `project` содержит отдельные `monitors`; первым типом будет HTTP/HTTPS.
+- Добавлен пример настройки Nginx для подадреса.
+
+### Основные изменённые файлы
+
+- `.env.example`
+- `README.md`
+- `main.go`
+- `internal/config/config.go`
+- `internal/config/config_test.go`
+- `internal/httpserver/server.go`
+- `internal/httpserver/server_test.go`
+- `internal/httpserver/auth_handlers.go`
+- `internal/httpserver/auth_handlers_test.go`
+- `internal/httpserver/site_handlers.go`
+- `internal/httpserver/site_handlers_test.go`
+- документы в `docs`.
+
+### Почему
+
+Uptime Control должен устанавливаться рядом с существующим проектом пользователя и не требовать отдельного домена. Разделение `project` и `monitor` позволит одному проекту иметь HTTP, TCP, heartbeat и другие проверки без привязки только к понятию сайта.
+
+### Как проверить
+
+1. Задать `PUBLIC_ORIGIN=https://igra.ru` и `BASE_PATH=/uptimec`.
+2. Запустить приложение.
+3. Проверить `GET /uptimec/health` и `GET /uptimec/ready`.
+4. Зарегистрироваться через `/uptimec/api/v1/auth/register` и убедиться, что cookie имеет `Path=/uptimec`.
+5. Выполнить `go test ./...`, `go test -race ./...`, `go vet ./...` и `go build ./...`.
+
+### Риски и ограничения
+
+- Реальная схема пока использует `sites`; переход на `projects` и `monitors` требует отдельной миграции с сохранением данных.
+- Открытая регистрация ещё не закрывается после создания первого владельца self-hosted-экземпляра.
+- Frontend ещё не создан, поэтому в браузере пока нет готовой панели по `/uptimec`.
+
 ## 2026-09-06 — Реализовано защищённое управление сайтами
 
 ### Что сделано
