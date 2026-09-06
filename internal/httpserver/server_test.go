@@ -88,6 +88,20 @@ func TestRoutesCanBeMountedUnderBasePath(t *testing.T) {
 	}
 }
 
+func TestDashboardIsServedUnderBasePath(t *testing.T) {
+	handler := newHandler(stubDatabase{}, stubAuthService{}, stubSiteService{}, Options{BasePath: "/uptimec"})
+	request := httptest.NewRequest(http.MethodGet, "/uptimec/", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("dashboard status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if response.Header().Get("Content-Security-Policy") == "" {
+		t.Fatal("dashboard response has no Content-Security-Policy")
+	}
+}
+
 func TestHealthHandler(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/health", nil)
 	response := httptest.NewRecorder()

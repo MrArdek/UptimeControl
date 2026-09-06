@@ -1,0 +1,22 @@
+[Unit]
+Description=Uptime Control self-hosted monitoring
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=uptime-control
+Group=uptime-control
+WorkingDirectory=/opt/uptime-control
+EnvironmentFile=/etc/uptime-control/uptime-control.env
+ExecStart=/opt/uptime-control/uptime-control
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/uptime-control
+
+[Install]
+WantedBy=multi-user.target

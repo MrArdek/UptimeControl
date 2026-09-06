@@ -15,7 +15,9 @@ import (
 	"github.com/MrArdek/UptimeControl/internal/config"
 	"github.com/MrArdek/UptimeControl/internal/httpserver"
 	"github.com/MrArdek/UptimeControl/internal/migrations"
+	"github.com/MrArdek/UptimeControl/internal/monitoring"
 	"github.com/MrArdek/UptimeControl/internal/postgres"
+	"github.com/MrArdek/UptimeControl/internal/projects"
 	"github.com/MrArdek/UptimeControl/internal/sites"
 )
 
@@ -52,11 +54,37 @@ func run() error {
 
 	authentication := auth.NewService(auth.NewPostgresStore(database))
 	siteManagement := sites.NewService(sites.NewPostgresStore(database))
-	server := httpserver.New(cfg.HTTPAddress, database, authentication, siteManagement, httpserver.Options{
-		AllowedOrigin: cfg.PublicOrigin,
-		BasePath:      cfg.BasePath,
-		CookieSecure:  cfg.SessionCookieSecure,
-	})
+	projectManagement := projects.NewService(projects.NewPostgresStore(database))
+	monitorStore := monitoring.NewPostgresStore(database)
+	var notifier monitoring.Notifier
+	if cfg.TelegramBotToken != "" {
+		notifier = monitoring.NewTelegramNotifier(cfg.TelegramBotToken, cfg.TelegramChatID)
+	}
+	scheduler := monitoring.NewScheduler(monitorStore, monitoring.NewHTTPChecker(), notifier, logger)
+	runtimeContext, cancelRuntime := context.WithCancel(context.Background())
+	monitoringDone := make(chan struct{})
+	go func() {
+		defer close(monitoringDone)
+		scheduler.Run(runtimeContext)
+	}()
+	defer func() {
+		cancelRuntime()
+		<-monitoringDone
+	}()
+
+	server := httpserver.NewApplication(
+		cfg.HTTPAddress,
+		database,
+		authentication,
+		siteManagement,
+		projectManagement,
+		monitorStore,
+		scheduler,
+		httpserver.Options{
+			AllowedOrigin: cfg.PublicOrigin,
+			BasePath:      cfg.BasePath,
+			CookieSecure:  cfg.SessionCookieSecure,
+		})
 	serverErrors := make(chan error, 1)
 
 	go func() {
@@ -79,6 +107,7 @@ func run() error {
 	case receivedSignal := <-shutdownSignals:
 		logger.Info("shutdown signal received", "signal", receivedSignal.String())
 	}
+	cancelRuntime()
 
 	shutdownContext, cancelShutdown := httpserver.ShutdownContext()
 	defer cancelShutdown()

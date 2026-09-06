@@ -1,0 +1,6 @@
+.git
+.env
+uptime-control
+docs
+*.log
+.DS_Store

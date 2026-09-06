@@ -1,5 +1,62 @@
 # Журнал AI-работ
 
+## 2026-09-06 — Собран self-hosted MVP мониторинга проектов
+
+### Что сделано
+
+- Добавлены универсальные `projects` и несколько `monitors` внутри проекта.
+- Миграция переносит старые sites, проверки и инциденты без потери данных.
+- Реализован безопасный HTTP checker с повторной DNS/IP-проверкой, ограничением redirects и таймаутов.
+- Добавлен PostgreSQL-планировщик с `FOR UPDATE SKIP LOCKED`.
+- Результаты сохраняются в `uptime_checks`; падение открывает один инцидент, восстановление закрывает его.
+- Добавлен heartbeat для Telegram-ботов, cron и workers без frontend.
+- Сырой heartbeat-токен показывается один раз, в БД хранится только SHA-256-хеш.
+- Первый пользователь становится владельцем self-hosted-установки; последующая регистрация закрыта.
+- Добавлены опциональные Telegram-уведомления о падении и восстановлении.
+- Добавлен встроенный адаптивный Dashboard без отдельного Node.js frontend.
+- Добавлены Dockerfile, Docker Compose и systemd-шаблон для соседнего monitoring-сервера.
+- Зафиксировано правило: перед новой зависимостью создаётся GitHub issue с обоснованием и аудитом.
+- Для Docker Compose до публикации создан GitHub issue #1.
+
+### Основные изменённые файлы
+
+- `main.go`
+- `compose.yaml`
+- `Dockerfile`
+- `deploy/*`
+- `internal/projects/*`
+- `internal/monitoring/*`
+- `internal/netpolicy/*`
+- `internal/httpserver/project_handlers.go`
+- `internal/httpserver/heartbeat_handler.go`
+- `internal/httpserver/dashboard.go`
+- `internal/httpserver/static/index.html`
+- `internal/migrations/sql/000003_projects_and_monitors.up.sql`
+- `internal/auth/*`
+- `.env.example`
+- документация в `docs`.
+
+### Почему
+
+Приложение должно продолжать работать при падении основного проекта, поэтому оно устанавливается на независимый сервер. Разделение проекта и monitor позволяет контролировать сайты, API и процессы без frontend через разные типы проверок.
+
+### Как проверено
+
+- unit tests всех пакетов;
+- интеграционная миграция существующего site с историей и инцидентом;
+- первый владелец и блокировка второй регистрации;
+- HTTP-проверка: `404` открыл инцидент, успешный URL закрыл его;
+- heartbeat: пропуск открыл инцидент, следующий сигнал закрыл его;
+- Dashboard проверен в браузере по `/uptimec`;
+- `go test`, race detector, `go vet` и сборка.
+
+### Риски и ограничения
+
+- Реальная отправка Telegram не проверена без пользовательского bot token и chat ID.
+- Dockerfile и Compose не собраны локально, потому что Docker отсутствует в текущем окружении.
+- Для публичной установки всё ещё обязательны внешний TLS reverse proxy, firewall и резервные копии.
+- TCP, Server Agent, несколько регионов и командные роли не входят в MVP.
+
 ## 2026-09-06 — Начат переход к self-hosted-проектам и URL-префиксу
 
 ### Что сделано

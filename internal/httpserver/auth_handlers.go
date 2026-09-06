@@ -81,6 +81,9 @@ func (handlers *authHandlers) register(response http.ResponseWriter, request *ht
 	case errors.Is(err, auth.ErrEmailTaken):
 		writeError(response, http.StatusConflict, "email_taken", "email is already registered")
 		return
+	case errors.Is(err, auth.ErrRegistrationClosed):
+		writeError(response, http.StatusForbidden, "registration_closed", "this instance already has an owner")
+		return
 	case err != nil:
 		writeError(response, http.StatusInternalServerError, "internal_error", "request could not be completed")
 		return

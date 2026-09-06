@@ -19,6 +19,8 @@ type Config struct {
 	PublicOrigin        string
 	BasePath            string
 	SessionCookieSecure bool
+	TelegramBotToken    string
+	TelegramChatID      string
 }
 
 // Load reads configuration from the environment and validates it before startup.
@@ -56,12 +58,20 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("SESSION_COOKIE_SECURE: %w", err)
 	}
 
+	telegramBotToken := strings.TrimSpace(os.Getenv("TELEGRAM_BOT_TOKEN"))
+	telegramChatID := strings.TrimSpace(os.Getenv("TELEGRAM_CHAT_ID"))
+	if (telegramBotToken == "") != (telegramChatID == "") {
+		return Config{}, fmt.Errorf("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set together")
+	}
+
 	return Config{
 		HTTPAddress:         address,
 		DatabaseURL:         databaseURL,
 		PublicOrigin:        publicOrigin,
 		BasePath:            basePath,
 		SessionCookieSecure: cookieSecure,
+		TelegramBotToken:    telegramBotToken,
+		TelegramChatID:      telegramChatID,
 	}, nil
 }
 

@@ -191,6 +191,29 @@ func TestRegisterHandlerMapsDuplicateEmail(t *testing.T) {
 	}
 }
 
+func TestRegisterHandlerMapsClosedRegistration(t *testing.T) {
+	handlers := newAuthHandlers(
+		&configurableAuthService{registerError: auth.ErrRegistrationClosed},
+		Options{AllowedOrigin: "http://localhost:8080"},
+	)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/auth/register",
+		strings.NewReader(`{"email":"second@example.com","password":"correct horse battery staple"}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handlers.register(response, request)
+
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusForbidden)
+	}
+	if !strings.Contains(response.Body.String(), "registration_closed") {
+		t.Fatalf("response does not explain closed registration: %s", response.Body.String())
+	}
+}
+
 func TestLoginHandlerMapsInternalErrors(t *testing.T) {
 	handlers := newAuthHandlers(
 		&configurableAuthService{loginError: errors.New("database error")},

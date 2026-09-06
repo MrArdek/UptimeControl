@@ -47,9 +47,35 @@ func New(
 	siteManagement siteService,
 	options Options,
 ) *http.Server {
+	return newServer(address, newHandler(database, authentication, siteManagement, options))
+}
+
+// NewApplication creates the complete self-hosted application server.
+func NewApplication(
+	address string,
+	database databasePinger,
+	authentication authService,
+	siteManagement siteService,
+	projectManagement projectService,
+	history historyService,
+	heartbeats heartbeatService,
+	options Options,
+) *http.Server {
+	return newServer(address, newApplicationHandler(
+		database,
+		authentication,
+		siteManagement,
+		projectManagement,
+		history,
+		heartbeats,
+		options,
+	))
+}
+
+func newServer(address string, handler http.Handler) *http.Server {
 	return &http.Server{
 		Addr:              address,
-		Handler:           newHandler(database, authentication, siteManagement, options),
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
@@ -68,6 +94,18 @@ func newHandler(
 	siteManagement siteService,
 	options Options,
 ) http.Handler {
+	return newApplicationHandler(database, authentication, siteManagement, nil, nil, nil, options)
+}
+
+func newApplicationHandler(
+	database databasePinger,
+	authentication authService,
+	siteManagement siteService,
+	projectManagement projectService,
+	history historyService,
+	heartbeats heartbeatService,
+	options Options,
+) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc(routePath(options.BasePath, "/health"), healthHandler)
 	mux.HandleFunc(routePath(options.BasePath, "/ready"), readyHandler(database))
@@ -78,9 +116,20 @@ func newHandler(
 	mux.HandleFunc(routePath(options.BasePath, "/api/v1/auth/logout"), authenticationHandlers.logout)
 	mux.HandleFunc(routePath(options.BasePath, "/api/v1/auth/me"), authenticationHandlers.me)
 
-	siteHandlers := newSiteHandlers(authentication, siteManagement, options)
-	mux.HandleFunc(routePath(options.BasePath, "/api/v1/sites"), siteHandlers.collection)
-	mux.HandleFunc(routePath(options.BasePath, "/api/v1/sites/"), siteHandlers.item)
+	if projectManagement != nil && history != nil {
+		projectHandlers := newProjectHandlers(authentication, projectManagement, history, options)
+		mux.HandleFunc(routePath(options.BasePath, "/api/v1/projects"), projectHandlers.collection)
+		mux.HandleFunc(routePath(options.BasePath, "/api/v1/projects/"), projectHandlers.item)
+	} else {
+		// Kept only for isolated compatibility tests while installations migrate to projects.
+		siteHandlers := newSiteHandlers(authentication, siteManagement, options)
+		mux.HandleFunc(routePath(options.BasePath, "/api/v1/sites"), siteHandlers.collection)
+		mux.HandleFunc(routePath(options.BasePath, "/api/v1/sites/"), siteHandlers.item)
+	}
+	if heartbeats != nil {
+		mux.HandleFunc(routePath(options.BasePath, "/api/v1/heartbeat/"), heartbeatHandler(heartbeats, options.BasePath))
+	}
+	registerDashboard(mux, options.BasePath)
 
 	return mux
 }

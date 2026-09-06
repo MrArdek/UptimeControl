@@ -125,3 +125,13 @@ func TestLoadRejectsInvalidBasePath(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadRequiresCompleteTelegramConfiguration(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/uptime_control")
+	t.Setenv("TELEGRAM_BOT_TOKEN", "secret-token")
+	t.Setenv("TELEGRAM_CHAT_ID", "")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() returned no error for incomplete Telegram configuration")
+	}
+}

@@ -4,20 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
-	"net/netip"
-	"net/url"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/MrArdek/UptimeControl/internal/identity"
+	"github.com/MrArdek/UptimeControl/internal/netpolicy"
 )
 
 const (
 	maximumNameCharacters = 100
-	maximumURLBytes       = 2048
 	minimumCheckInterval  = 30
 	maximumCheckInterval  = 86400
 	defaultCheckInterval  = 60
@@ -191,78 +187,10 @@ func validateInterval(interval int) error {
 }
 
 func normalizeURL(rawURL string) (string, error) {
-	normalized := strings.TrimSpace(rawURL)
-	if normalized == "" || len(normalized) > maximumURLBytes {
-		return "", ErrInvalidURL
-	}
-
-	parsedURL, err := url.ParseRequestURI(normalized)
+	normalized, err := netpolicy.NormalizeHTTPURL(rawURL)
 	if err != nil {
 		return "", ErrInvalidURL
 	}
 
-	parsedURL.Scheme = strings.ToLower(parsedURL.Scheme)
-	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return "", ErrInvalidURL
-	}
-	if parsedURL.Hostname() == "" || parsedURL.User != nil || parsedURL.Fragment != "" {
-		return "", ErrInvalidURL
-	}
-
-	if portText := parsedURL.Port(); portText != "" {
-		port, err := strconv.Atoi(portText)
-		if err != nil || port < 1 || port > 65535 {
-			return "", ErrInvalidURL
-		}
-	}
-
-	hostname := strings.ToLower(strings.TrimSuffix(parsedURL.Hostname(), "."))
-	if isBlockedHostname(hostname) {
-		return "", ErrInvalidURL
-	}
-
-	port := parsedURL.Port()
-	if net.ParseIP(hostname) != nil && strings.Contains(hostname, ":") {
-		parsedURL.Host = "[" + hostname + "]"
-	} else {
-		parsedURL.Host = hostname
-	}
-	if port != "" {
-		parsedURL.Host = net.JoinHostPort(hostname, port)
-	}
-
-	return parsedURL.String(), nil
-}
-
-func isBlockedHostname(hostname string) bool {
-	if strings.Contains(hostname, "%") {
-		return true
-	}
-
-	if hostname == "localhost" ||
-		strings.HasSuffix(hostname, ".localhost") ||
-		strings.HasSuffix(hostname, ".local") ||
-		strings.HasSuffix(hostname, ".internal") ||
-		strings.HasSuffix(hostname, ".invalid") ||
-		strings.HasSuffix(hostname, ".test") {
-		return true
-	}
-
-	address := net.ParseIP(hostname)
-	if address == nil {
-		return !strings.Contains(hostname, ".")
-	}
-
-	if address.IsLoopback() ||
-		address.IsPrivate() ||
-		address.IsLinkLocalUnicast() ||
-		address.IsLinkLocalMulticast() ||
-		address.IsMulticast() ||
-		address.IsUnspecified() {
-		return true
-	}
-
-	prefix := netip.MustParsePrefix("100.64.0.0/10")
-	parsedAddress, ok := netip.AddrFromSlice(address)
-	return ok && prefix.Contains(parsedAddress.Unmap())
+	return normalized, nil
 }

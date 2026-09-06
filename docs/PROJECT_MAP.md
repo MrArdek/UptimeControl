@@ -39,12 +39,16 @@ UptimeControl/
 │   ├── httpserver/
 │   │   ├── auth_handlers.go
 │   │   ├── auth_handlers_test.go
+│   │   ├── dashboard.go
+│   │   ├── heartbeat_handler.go
+│   │   ├── project_handlers.go
 │   │   ├── rate_limiter.go
 │   │   ├── rate_limiter_test.go
 │   │   ├── server.go
 │   │   ├── server_test.go
 │   │   ├── site_handlers.go
-│   │   └── site_handlers_test.go
+│   │   ├── site_handlers_test.go
+│   │   └── static/index.html
 │   ├── identity/
 │   │   ├── uuid.go
 │   │   └── uuid_test.go
@@ -52,17 +56,34 @@ UptimeControl/
 │   │   ├── sql/
 │   │   │   ├── 000001_initial_schema.up.sql
 │   │   │   ├── 000002_unique_active_site_url.up.sql
+│   │   │   ├── 000003_projects_and_monitors.up.sql
 │   │   │   └── README.md
 │   │   └── migrations.go
+│   ├── monitoring/
+│   │   ├── checker.go
+│   │   ├── postgres_store.go
+│   │   ├── scheduler.go
+│   │   └── telegram.go
+│   ├── netpolicy/
+│   │   └── httpurl.go
 │   ├── postgres/
 │   │   ├── postgres.go
 │   │   └── postgres_test.go
+│   ├── projects/
+│   │   ├── postgres_store.go
+│   │   └── projects.go
 │   └── sites/
 │       ├── postgres_store.go
 │       ├── sites.go
 │       └── sites_test.go
 ├── .env.example
+├── .dockerignore
 ├── .gitignore
+├── compose.yaml
+├── Dockerfile
+├── deploy/
+│   ├── compose.env.example
+│   └── uptime-control.service
 ├── go.mod
 ├── go.sum
 ├── LICENSE
@@ -96,7 +117,19 @@ UptimeControl/
 
 ### `/internal/sites`
 
-Содержит текущие бизнес-правила HTTP-целей, проверку URL и PostgreSQL-запросы с обязательным владельцем. Название `sites` временное до миграции на `projects` и `monitors`.
+Устаревшая реализация site API, оставленная временно для совместимости тестов и понимания миграции. Основной сервер эти маршруты больше не регистрирует.
+
+### `/internal/projects`
+
+Бизнес-правила и PostgreSQL-запросы проектов и их HTTP/heartbeat monitors. Здесь находятся проверки владельца, мягкое удаление и одноразовая генерация heartbeat-токена.
+
+### `/internal/monitoring`
+
+Планировщик заданий, безопасный HTTP checker, запись истории и инцидентов, приём heartbeat и Telegram-уведомления.
+
+### `/internal/netpolicy`
+
+Общая нормализация публичных HTTP/HTTPS URL и запрет внутренних/private IP для защиты от SSRF и DNS rebinding.
 
 ### `/internal/identity`
 
@@ -104,7 +137,7 @@ UptimeControl/
 
 ### `/internal/httpserver`
 
-Создаёт HTTP-сервер, задаёт таймауты и регистрирует служебные, auth- и site-маршруты. Здесь находятся HTTP-обработчики, Origin-проверка, лимит запросов и тесты.
+Создаёт HTTP-сервер, встроенный Dashboard и маршруты health, auth, projects, monitors, history и heartbeat. Здесь также находятся Origin-проверка, лимит запросов и тесты.
 
 ### `/internal/postgres`
 
@@ -117,6 +150,14 @@ UptimeControl/
 ### `/.env.example`
 
 Безопасный пример доступных переменных окружения без секретных значений.
+
+### `/Dockerfile` и `/compose.yaml`
+
+Воспроизводимая self-hosted-установка приложения вместе с отдельным PostgreSQL. Публично открывается только loopback-порт приложения через reverse proxy; порт PostgreSQL наружу не публикуется.
+
+### `/deploy`
+
+Пример переменных Docker Compose и шаблон systemd для ручной установки бинарного файла.
 
 ### `/README.md`
 
@@ -154,9 +195,12 @@ UptimeControl/
 | --- | --- | --- |
 | Точка входа | `main.go` | Запуск и завершение HTTP-сервера |
 | Конфигурация | `internal/config` | Адреса, PostgreSQL, origin, base path и cookie |
-| HTTP-сервер | `internal/httpserver` | Служебные и auth-маршруты |
+| HTTP-сервер и Dashboard | `internal/httpserver` | UI, служебные, auth-, project- и heartbeat-маршруты |
 | Авторизация | `internal/auth` | Регистрация, вход, сессии и Argon2id |
-| HTTP-цели (временно sites) | `internal/sites` | CRUD, проверка владельца и URL; ожидает миграции к monitors |
+| Проекты | `internal/projects` | CRUD проектов и HTTP/heartbeat monitors |
+| Мониторинг | `internal/monitoring` | Scheduler, HTTP checker, heartbeat, история, инциденты и Telegram |
+| Сетевая безопасность | `internal/netpolicy` | URL, DNS/IP и SSRF-политика |
+| Старый site API | `internal/sites` | Не регистрируется основной точкой запуска |
 | PostgreSQL | `internal/postgres` | Пул соединений и проверка подключения |
 | Миграции | `internal/migrations` | Начальная схема применяется автоматически |
 | Аналитика | `api/v1/ui/analytics.go` | Пустая заготовка |
@@ -164,10 +208,10 @@ UptimeControl/
 | Требования к продукту | `README.md` | Подробное описание |
 | План разработки | `docs/PLAN.md` | Создан |
 | Безопасность | `docs/SECURITY.md` | Создан |
-| API | `docs/API.md` | Служебные и auth-маршруты |
-| База данных | `docs/DATABASE.md` | PostgreSQL подключён, начальная схема создана |
-| Frontend | — | Не создан |
-| Тесты | `internal/**/*_test.go` | Конфигурация, auth, сайты и HTTP |
+| API | `docs/API.md` | Полное MVP API |
+| База данных | `docs/DATABASE.md` | Users, projects, monitors, checks и incidents |
+| Frontend | `internal/httpserver/static/index.html` | Встроенный адаптивный Dashboard |
+| Тесты | `internal/**/*_test.go` | Unit и PostgreSQL integration tests |
 
 ## Предлагаемая будущая структура
 
@@ -175,9 +219,7 @@ UptimeControl/
 
 ```text
 cmd/                 точки входа backend, check node и server agent
-internal/monitoring/ планировщик, проверки и инциденты
-internal/projects/   проекты и их monitors после миграции модели
-web/                 frontend на TypeScript/React или Next.js
+web/                 возможный расширенный frontend после встроенного MVP Dashboard
 tracker/             JavaScript-трекер
 agent/               код Server Agent, если он не вынесен в отдельный модуль
 ```

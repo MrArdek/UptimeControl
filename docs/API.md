@@ -6,7 +6,7 @@
 
 Если задан `BASE_PATH=/uptimec`, этот префикс добавляется ко всем маршрутам. Например, health endpoint будет доступен по адресу `https://igra.ru/uptimec/health`, а регистрация — по `https://igra.ru/uptimec/api/v1/auth/register`.
 
-Текущие маршруты `/sites` являются переходным API. После миграции универсальной модели появятся проекты и отдельные monitors; существующие данные должны быть сохранены.
+Маршруты `/sites` оставлены только в исходном коде для совместимости тестов и не регистрируются основной точкой запуска. Актуальный API использует проекты и отдельные monitors; данные старых `sites` переносятся миграцией.
 
 ## GET /health
 
@@ -129,6 +129,7 @@ Body:
 - `400 invalid_password` — пароль не соответствует требованиям;
 - `403 invalid_origin` — браузерный Origin не разрешён;
 - `409 email_taken` — email уже зарегистрирован;
+- `403 registration_closed` — владелец self-hosted-экземпляра уже создан;
 - `429 rate_limited` — превышен лимит запросов;
 - `500 internal_error` — внутренняя ошибка без раскрытия деталей.
 
@@ -197,6 +198,100 @@ Body имеет тот же формат, что и регистрация.
 - `401 unauthorized` — действующая сессия отсутствует;
 - `403 invalid_origin` — браузерный Origin не разрешён;
 - `500 internal_error`.
+
+## Проекты и monitors
+
+Все маршруты управления требуют действующую cookie-сессию. Первый monitor создаётся вместе с проектом.
+
+### GET /api/v1/projects
+
+Возвращает до 100 проектов владельца вместе с monitors и их последним состоянием.
+
+Состояние monitor содержится в полях:
+
+- `last_checked_at`;
+- `last_available`;
+- `last_status_code`;
+- `last_response_time_ms`;
+- `last_error`.
+
+До первой проверки эти поля имеют значение `null`.
+
+### POST /api/v1/projects
+
+Создаёт проект и первый monitor.
+
+HTTP-пример:
+
+```json
+{
+  "name": "Public API",
+  "description": "Основной backend",
+  "monitor": {
+    "type": "http",
+    "name": "Health endpoint",
+    "url": "https://api.example.com/health",
+    "check_interval_seconds": 60,
+    "timeout_seconds": 10
+  }
+}
+```
+
+Heartbeat-пример для Telegram-бота, cron или worker без frontend:
+
+```json
+{
+  "name": "Telegram bot",
+  "monitor": {
+    "type": "heartbeat",
+    "name": "Worker loop",
+    "check_interval_seconds": 60
+  }
+}
+```
+
+При создании heartbeat monitor ответ один раз содержит `heartbeat_token`. Сырой токен не сохраняется в PostgreSQL и не возвращается в последующих списках.
+
+### GET, PATCH, DELETE /api/v1/projects/{projectID}
+
+- `GET` возвращает проект владельца;
+- `PATCH` изменяет `name` и/или `description`;
+- `DELETE` мягко удаляет проект и выключает monitors, требуется `X-Confirm-Delete: true`.
+
+### POST /api/v1/projects/{projectID}/monitors
+
+Добавляет HTTP или heartbeat monitor к существующему проекту. Формат совпадает с объектом `monitor` из создания проекта.
+
+### PATCH, DELETE /api/v1/projects/{projectID}/monitors/{monitorID}
+
+- `PATCH` изменяет название, URL, интервал, таймаут или состояние `enabled`;
+- `DELETE` мягко удаляет monitor и требует `X-Confirm-Delete: true`.
+
+### GET /api/v1/projects/{projectID}/monitors/{monitorID}/checks
+
+Возвращает историю проверок от новых к старым. Параметр `limit` ограничен диапазоном до 500, значение по умолчанию — 100.
+
+### GET /api/v1/projects/{projectID}/monitors/{monitorID}/incidents
+
+Возвращает историю инцидентов. `resolved_at: null` означает, что инцидент открыт.
+
+### POST /api/v1/heartbeat/{secretToken}
+
+Публичный endpoint с секретным высокоэнтропийным токеном. Предназначен для Telegram-ботов, cron и фоновых сервисов.
+
+Успешный ответ: `204 No Content`. Неизвестный токен также получает `204`, чтобы API не позволяло проверять существование токенов перебором.
+
+Пример:
+
+```bash
+curl --fail -X POST 'https://uptime.example.com/api/v1/heartbeat/SECRET_TOKEN'
+```
+
+Сигнал нужно отправлять чаще настроенного интервала. Если он не приходит вовремя, открывается инцидент; следующий heartbeat закрывает его.
+
+## Устаревший API сайтов
+
+Следующие маршруты описывают предыдущую модель и не регистрируются основной self-hosted-точкой запуска. Они сохранены временно для понимания миграции и будут удалены после стабилизации API проектов.
 
 ## Сайты
 

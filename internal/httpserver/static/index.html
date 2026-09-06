@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Uptime Control</title>
+  <style>
+    :root { color-scheme: dark; --bg:#080b12; --panel:#111722; --line:#263043; --text:#edf3ff; --muted:#94a3b8; --accent:#72e1a6; --danger:#ff6b7a; --warn:#ffc861; }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; background:radial-gradient(circle at 15% 0,#15253a 0,transparent 36%),var(--bg); color:var(--text); font:15px/1.5 Inter,ui-sans-serif,system-ui,sans-serif; }
+    main { width:min(1120px,calc(100% - 32px)); margin:0 auto; padding:32px 0 64px; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom:32px; }
+    .brand { display:flex; align-items:center; gap:12px; }
+    .logo { width:38px; height:38px; border-radius:12px; background:linear-gradient(135deg,var(--accent),#56a8ff); box-shadow:0 0 28px #72e1a644; }
+    h1,h2,h3,p { margin-top:0; }
+    h1 { margin-bottom:0; font-size:21px; letter-spacing:-.02em; }
+    h2 { font-size:24px; letter-spacing:-.03em; }
+    h3 { font-size:16px; margin-bottom:4px; }
+    .muted { color:var(--muted); }
+    .panel { background:#111722dd; border:1px solid var(--line); border-radius:18px; padding:22px; box-shadow:0 18px 60px #0004; }
+    .auth { width:min(460px,100%); margin:8vh auto; }
+    .tabs { display:flex; gap:8px; margin-bottom:20px; }
+    button,.tab { border:0; border-radius:10px; padding:10px 14px; font:inherit; font-weight:650; cursor:pointer; background:#273247; color:var(--text); }
+    button:hover,.tab:hover { filter:brightness(1.12); }
+    button.primary,.tab.active { background:var(--accent); color:#062313; }
+    button.danger { background:#3c2028; color:#ffbbc2; }
+    button.ghost { background:transparent; border:1px solid var(--line); }
+    input,select,textarea { width:100%; margin:6px 0 15px; border:1px solid var(--line); border-radius:10px; background:#090e17; color:var(--text); padding:11px 12px; font:inherit; }
+    label { display:block; color:#c7d2e4; font-size:13px; font-weight:650; }
+    .row { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+    .toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; }
+    .layout { display:grid; grid-template-columns:330px 1fr; gap:20px; align-items:start; }
+    .projects { display:grid; gap:14px; }
+    .project { background:var(--panel); border:1px solid var(--line); border-radius:16px; overflow:hidden; }
+    .project-head { display:flex; justify-content:space-between; gap:16px; padding:18px; border-bottom:1px solid var(--line); }
+    .monitor { display:grid; grid-template-columns:1fr auto; gap:14px; align-items:center; padding:16px 18px; }
+    .monitor + .monitor { border-top:1px solid var(--line); }
+    .status { display:inline-flex; align-items:center; gap:7px; padding:5px 9px; border-radius:999px; background:#222c3c; font-size:12px; font-weight:750; white-space:nowrap; }
+    .status::before { content:""; width:8px; height:8px; border-radius:50%; background:var(--muted); }
+    .status.up { color:#bdfbd8; background:#123526; }.status.up::before { background:var(--accent); }
+    .status.down { color:#ffc2c8; background:#401d26; }.status.down::before { background:var(--danger); }
+    .status.pending { color:#ffe6ae; background:#3a2e17; }.status.pending::before { background:var(--warn); }
+    .monitor-meta { color:var(--muted); font-size:13px; overflow-wrap:anywhere; }
+    .actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+    .actions button { padding:7px 10px; font-size:12px; }
+    .message { display:none; border-radius:10px; padding:10px 12px; margin-bottom:15px; background:#37242b; color:#ffd4d8; }
+    .message.show { display:block; }
+    .secret { border:1px solid #38694e; background:#102b20; padding:14px; border-radius:12px; margin:14px 0; overflow-wrap:anywhere; }
+    .history { margin-top:12px; padding-top:12px; border-top:1px dashed var(--line); font-size:13px; }
+    .history-item { display:flex; justify-content:space-between; gap:10px; padding:5px 0; color:var(--muted); }
+    .hidden { display:none !important; }
+    @media (max-width:800px) { .layout { grid-template-columns:1fr; } .row { grid-template-columns:1fr; gap:0; } header { align-items:flex-start; } }
+  </style>
+</head>
+<body data-base-path="__BASE_PATH__">
+<main>
+  <header>
+    <div class="brand"><div class="logo"></div><div><h1>Uptime Control</h1><div class="muted">Self-hosted monitoring</div></div></div>
+    <button id="logout" class="ghost hidden">Выйти</button>
+  </header>
+
+  <section id="auth" class="auth panel hidden">
+    <h2>Управление проектами</h2>
+    <p class="muted">Первый зарегистрированный пользователь становится владельцем этой установки.</p>
+    <div class="tabs"><button class="tab active" data-tab="login">Вход</button><button class="tab" data-tab="register">Первый запуск</button></div>
+    <div id="auth-message" class="message"></div>
+    <form id="login-form">
+      <label>Email<input name="email" type="email" autocomplete="email" required></label>
+      <label>Пароль<input name="password" type="password" autocomplete="current-password" minlength="12" required></label>
+      <button class="primary" type="submit">Войти</button>
+    </form>
+    <form id="register-form" class="hidden">
+      <label>Email владельца<input name="email" type="email" autocomplete="email" required></label>
+      <label>Пароль, минимум 12 символов<input name="password" type="password" autocomplete="new-password" minlength="12" required></label>
+      <button class="primary" type="submit">Создать владельца</button>
+    </form>
+  </section>
+
+  <section id="app" class="hidden">
+    <div class="toolbar"><div><h2 style="margin-bottom:2px">Проекты</h2><div class="muted" id="owner"></div></div><button id="refresh" class="ghost">Обновить</button></div>
+    <div class="layout">
+      <form id="create-project" class="panel">
+        <h3>Новый проект</h3><p class="muted">Сайт, API, бот, игра или фоновая задача.</p>
+        <div id="project-message" class="message"></div>
+        <label>Название<input name="name" maxlength="100" required placeholder="Telegram bot"></label>
+        <label>Описание<textarea name="description" maxlength="2000" rows="2" placeholder="Необязательно"></textarea></label>
+        <label>Тип проверки<select name="type" id="monitor-type"><option value="http">HTTP / HTTPS</option><option value="heartbeat">Heartbeat для бота или worker</option></select></label>
+        <label>Название проверки<input name="monitor_name" maxlength="100" required value="Основная проверка"></label>
+        <div id="url-field"><label>Публичный URL<input name="url" type="url" placeholder="https://example.com/health"></label></div>
+        <div class="row"><label>Интервал, секунд<input name="interval" type="number" min="30" max="86400" value="60" required></label><label id="timeout-field">Таймаут, секунд<input name="timeout" type="number" min="1" max="30" value="10" required></label></div>
+        <button class="primary" type="submit">Создать проект</button>
+        <div id="heartbeat-secret" class="secret hidden"></div>
+      </form>
+      <div id="projects" class="projects"><div class="panel muted">Загрузка…</div></div>
+    </div>
+  </section>
+</main>
+<script>
+const basePath = document.body.dataset.basePath;
+const api = path => `${basePath}/api/v1${path}`;
+const originHeader = {'Content-Type':'application/json'};
+const $ = selector => document.querySelector(selector);
+const escapeHTML = value => String(value ?? '').replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+
+async function request(path, options={}) {
+  const response = await fetch(api(path), {...options, credentials:'same-origin'});
+  let body = null;
+  if (response.headers.get('content-type')?.includes('application/json')) body = await response.json();
+  if (!response.ok) throw new Error(body?.error?.message || `HTTP ${response.status}`);
+  return body;
+}
+
+function message(element, text='') { element.textContent=text; element.classList.toggle('show', Boolean(text)); }
+function showAuth() { $('#auth').classList.remove('hidden'); $('#app').classList.add('hidden'); $('#logout').classList.add('hidden'); }
+function showApp(user) { $('#auth').classList.add('hidden'); $('#app').classList.remove('hidden'); $('#logout').classList.remove('hidden'); $('#owner').textContent=user.email; loadProjects(); }
+
+document.querySelectorAll('.tab').forEach(button => button.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(item => item.classList.toggle('active', item===button));
+  $('#login-form').classList.toggle('hidden', button.dataset.tab!=='login');
+  $('#register-form').classList.toggle('hidden', button.dataset.tab!=='register');
+  message($('#auth-message'));
+}));
+
+async function submitAuth(event, action) {
+  event.preventDefault(); message($('#auth-message'));
+  const data = Object.fromEntries(new FormData(event.target));
+  try { const result = await request(`/auth/${action}`, {method:'POST',headers:originHeader,body:JSON.stringify(data)}); showApp(result.user); }
+  catch (error) { message($('#auth-message'), error.message); }
+}
+$('#login-form').addEventListener('submit', event => submitAuth(event,'login'));
+$('#register-form').addEventListener('submit', event => submitAuth(event,'register'));
+$('#logout').addEventListener('click', async () => { try { await request('/auth/logout',{method:'POST'}); } catch {} showAuth(); });
+$('#refresh').addEventListener('click', loadProjects);
+
+$('#monitor-type').addEventListener('change', event => {
+  const heartbeat = event.target.value==='heartbeat';
+  $('#url-field').classList.toggle('hidden', heartbeat);
+  $('#timeout-field').classList.toggle('hidden', heartbeat);
+  $('#url-field input').required=!heartbeat;
+});
+
+$('#create-project').addEventListener('submit', async event => {
+  event.preventDefault(); message($('#project-message')); $('#heartbeat-secret').classList.add('hidden');
+  const form = new FormData(event.target); const type=form.get('type');
+  const payload={name:form.get('name'),description:form.get('description'),monitor:{type,name:form.get('monitor_name'),check_interval_seconds:Number(form.get('interval'))}};
+  if(type==='http'){payload.monitor.url=form.get('url');payload.monitor.timeout_seconds=Number(form.get('timeout'));}
+  try {
+    const result=await request('/projects',{method:'POST',headers:originHeader,body:JSON.stringify(payload)});
+    const monitor=result.project.monitors[0];
+    if(monitor.heartbeat_token){const url=`${location.origin}${basePath}/api/v1/heartbeat/${monitor.heartbeat_token}`;$('#heartbeat-secret').innerHTML=`<strong>Сохраните heartbeat URL — токен показывается один раз:</strong><br><code>${escapeHTML(url)}</code><br><br>Отправляйте POST чаще выбранного интервала.`;$('#heartbeat-secret').classList.remove('hidden');}
+    event.target.reset(); $('#monitor-type').dispatchEvent(new Event('change')); loadProjects();
+  } catch(error){message($('#project-message'),error.message);}
+});
+
+function monitorStatus(monitor){if(monitor.last_available===true)return ['up','Работает'];if(monitor.last_available===false)return ['down','Недоступен'];return ['pending','Ожидает проверки'];}
+function formatTime(value){return value?new Date(value).toLocaleString():'ещё не проверялся';}
+async function loadProjects(){
+  try {
+    const result=await request('/projects');
+    if(!result.projects.length){$('#projects').innerHTML='<div class="panel muted">Пока нет проектов. Создайте первый слева.</div>';return;}
+    $('#projects').innerHTML=result.projects.map(project=>`<article class="project"><div class="project-head"><div><h3>${escapeHTML(project.name)}</h3><div class="muted">${escapeHTML(project.description)}</div></div><button class="danger" onclick="deleteProject('${project.id}')">Удалить</button></div>${project.monitors.map(monitor=>{const status=monitorStatus(monitor);return `<div class="monitor"><div><h3>${escapeHTML(monitor.name)}</h3><div class="monitor-meta">${monitor.type==='heartbeat'?'Heartbeat':escapeHTML(monitor.url)} · каждые ${monitor.check_interval_seconds} сек.<br>Последняя проверка: ${formatTime(monitor.last_checked_at)}${monitor.last_response_time_ms!==null?` · ${monitor.last_response_time_ms} мс`:''}</div><div class="actions"><button class="ghost" onclick="loadHistory('${project.id}','${monitor.id}',this)">История</button></div><div class="history hidden"></div></div><span class="status ${status[0]}">${status[1]}</span></div>`}).join('')}</article>`).join('');
+  } catch(error){if(error.message.includes('authentication'))showAuth();else $('#projects').innerHTML=`<div class="panel">${escapeHTML(error.message)}</div>`;}
+}
+async function deleteProject(id){if(!confirm('Удалить проект и отключить его проверки?'))return;try{await request(`/projects/${id}`,{method:'DELETE',headers:{'X-Confirm-Delete':'true'}});loadProjects();}catch(error){alert(error.message);}}
+async function loadHistory(projectID,monitorID,button){const box=button.closest('.monitor').querySelector('.history');box.classList.remove('hidden');box.textContent='Загрузка…';try{const [checks,incidents]=await Promise.all([request(`/projects/${projectID}/monitors/${monitorID}/checks?limit=10`),request(`/projects/${projectID}/monitors/${monitorID}/incidents?limit=5`)]);box.innerHTML=`<strong>Последние проверки</strong>${checks.checks.map(item=>`<div class="history-item"><span>${item.available?'✅':'❌'} ${formatTime(item.checked_at)}</span><span>${item.status_code??item.error??'—'}</span></div>`).join('')||'<div class="muted">Нет данных</div>'}<br><strong>Инциденты: ${incidents.incidents.length}</strong>`;}catch(error){box.textContent=error.message;}}
+
+(async()=>{try{const result=await request('/auth/me');showApp(result.user);}catch{showAuth();}})();
+</script>
+</body>
+</html>

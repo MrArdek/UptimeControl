@@ -34,6 +34,21 @@ func (store *PostgresStore) CreateUserWithSession(
 	}
 	defer func() { _ = transaction.Rollback(ctx) }()
 
+	// A self-hosted instance has one bootstrap owner in the MVP. The table lock
+	// prevents two simultaneous first registrations from creating two owners.
+	if _, err := transaction.Exec(ctx, "LOCK TABLE users IN EXCLUSIVE MODE"); err != nil {
+		return fmt.Errorf("lock users for owner bootstrap: %w", err)
+	}
+	var ownerExists bool
+	if err := transaction.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM users WHERE deleted_at IS NULL)
+	`).Scan(&ownerExists); err != nil {
+		return fmt.Errorf("check existing owner: %w", err)
+	}
+	if ownerExists {
+		return ErrRegistrationClosed
+	}
+
 	_, err = transaction.Exec(ctx, `
 		INSERT INTO users (id, email, password_hash, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $4)

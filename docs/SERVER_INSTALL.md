@@ -4,6 +4,38 @@
 
 Инструкция предназначена для первого закрытого тестового сервера. Для публичного production-запуска дополнительно нужны TLS, firewall, резервные копии и системный мониторинг.
 
+## Рекомендуемая схема независимого мониторинга
+
+Uptime Control следует устанавливать на отдельный сервер, который не является контролируемым проектом и не использует его PostgreSQL.
+
+Рекомендуемый вариант:
+
+```text
+uptime.igra.ru ──DNS──> отдельный monitoring VPS ──HTTP/heartbeat──> основной сервер igra.ru
+```
+
+Если адрес `igra.ru/uptimec` проксируется через Nginx на основном сервере, при полном падении этого сервера Dashboard тоже станет недоступен. Подадрес поддерживается, но для независимости лучше отдельный поддомен с DNS, направленным непосредственно на monitoring VPS.
+
+## Быстрая установка через Docker Compose
+
+На отдельном сервере с Docker и Compose:
+
+```bash
+git clone https://github.com/MrArdek/UptimeControl.git
+cd UptimeControl
+cp deploy/compose.env.example .env
+```
+
+Замените `POSTGRES_PASSWORD` и `PUBLIC_ORIGIN` в `.env`, затем запустите:
+
+```bash
+docker compose up -d --build
+docker compose ps
+curl --fail http://127.0.0.1:8080/health
+```
+
+PostgreSQL не публикуется наружу, приложение слушает только loopback сервера, а данные БД сохраняются в Docker volume `uptime_control_postgres`. Публичный доступ должен проходить через HTTPS reverse proxy.
+
 ## 1. Требования
 
 - Linux-сервер с отдельным непривилегированным пользователем приложения.
@@ -53,12 +85,15 @@ DATABASE_URL=<секретная строка подключения PostgreSQL>
 PUBLIC_ORIGIN=https://monitor.example.com
 BASE_PATH=
 SESSION_COOKIE_SECURE=true
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
 ```
 
 - `HTTP_ADDR` лучше оставлять на loopback и открывать приложение через reverse proxy.
 - `PUBLIC_ORIGIN` должен точно совпадать с адресом в браузере и не содержать путь.
 - `BASE_PATH` оставьте пустым для отдельного домена либо задайте, например, `/uptimec` для адреса `https://igra.ru/uptimec`.
 - `SESSION_COOKIE_SECURE=true` требует HTTPS и обязателен для публичного сервера.
+- `TELEGRAM_BOT_TOKEN` и `TELEGRAM_CHAT_ID` задаются вместе для уведомлений либо остаются пустыми.
 
 Пример для установки по адресу `https://igra.ru/uptimec`:
 
@@ -121,6 +156,14 @@ location = /uptimec {
     return 308 /uptimec/;
 }
 
+location ^~ /uptimec/api/v1/heartbeat/ {
+    access_log off;
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+
 location /uptimec/ {
     proxy_pass http://127.0.0.1:8080;
     proxy_set_header Host $host;
@@ -130,6 +173,8 @@ location /uptimec/ {
 ```
 
 У `proxy_pass` в этом примере нет завершающего `/`: Nginx передаёт приложению полный путь `/uptimec/...`, который ожидается при заданном `BASE_PATH`.
+
+Для heartbeat location отключён access log, потому что секретный токен находится в URL. Общие журналы Nginx не должны сохранять этот путь целиком.
 
 Текущая версия приложения не доверяет `X-Forwarded-For`, поэтому встроенный limiter за reverse proxy будет видеть адрес прокси. Основное production-ограничение частоты нужно настроить на самом reverse proxy.
 
@@ -145,7 +190,7 @@ location /uptimec/ {
 
 ## 10. Перед production
 
-- Не оставлять открытую регистрацию после создания владельца self-hosted-экземпляра; эта защита ещё не реализована.
+- Убедиться, что после регистрации первого владельца повторная регистрация возвращает `403 registration_closed`.
 - Настроить ежедневный зашифрованный бэкап и тест восстановления.
 - Добавить email-подтверждение и восстановление пароля.
 - Определить централизованный rate limit для нескольких реплик.

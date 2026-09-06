@@ -20,6 +20,7 @@ const (
 
 var (
 	ErrEmailTaken         = errors.New("email is already registered")
+	ErrRegistrationClosed = errors.New("registration is closed")
 	ErrInvalidEmail       = errors.New("invalid email")
 	ErrInvalidPassword    = errors.New("password does not meet requirements")
 	ErrInvalidCredentials = errors.New("invalid credentials")

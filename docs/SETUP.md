@@ -40,6 +40,8 @@ DATABASE_URL=postgresql://localhost/uptime_control
 PUBLIC_ORIGIN=http://localhost:8080
 BASE_PATH=
 SESSION_COOKIE_SECURE=false
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
 ```
 
 - `HTTP_ADDR` — адрес и порт HTTP-сервера.
@@ -51,6 +53,7 @@ SESSION_COOKIE_SECURE=false
 - `PUBLIC_ORIGIN` — внешний адрес frontend/API без пути; по умолчанию `http://localhost:8080`.
 - `BASE_PATH` — необязательный путь установки, например `/uptimec`. Пустое значение означает корень сайта.
 - `SESSION_COOKIE_SECURE` по умолчанию `true`. Значение `false` допустимо только для локального HTTP.
+- `TELEGRAM_BOT_TOKEN` и `TELEGRAM_CHAT_ID` — необязательная пара для уведомлений. Нужно задать оба значения либо оставить оба пустыми.
 
 Для адреса `https://igra.ru/uptimec` значения разделяются так:
 
@@ -182,41 +185,65 @@ curl -i -b "$UPTIME_COOKIE_JAR" -c "$UPTIME_COOKIE_JAR" \
   -X POST http://localhost:8080/api/v1/auth/logout
 ```
 
-Пока не удаляйте временный файл: он понадобится для проверки управления сайтами. После всех проверок выполните:
+Пока не удаляйте временный файл: он понадобится для проверки проектов. После всех проверок выполните:
 
 ```bash
 unlink "$UPTIME_COOKIE_JAR"
 ```
 
-## Проверка управления сайтами
+## Проверка проектов и HTTP monitor
 
-До удаления временного cookie-файла создайте сайт:
+До удаления временного cookie-файла создайте проект:
 
 ```bash
 curl -i -b "$UPTIME_COOKIE_JAR" \
   -H 'Content-Type: application/json' \
   -H 'Origin: http://localhost:8080' \
-  -d '{"name":"Main site","url":"https://example.com","check_interval_seconds":60}' \
-  http://localhost:8080/api/v1/sites
+  -d '{"name":"Main API","monitor":{"type":"http","name":"Health","url":"https://example.com","check_interval_seconds":60,"timeout_seconds":10}}' \
+  http://localhost:8080/api/v1/projects
 ```
 
 Получите список:
 
 ```bash
 curl -i -b "$UPTIME_COOKIE_JAR" \
-  http://localhost:8080/api/v1/sites
+  http://localhost:8080/api/v1/projects
 ```
 
-Для удаления замените `SITE_ID` на идентификатор из ответа создания:
+Для удаления замените `PROJECT_ID` на идентификатор из ответа создания:
 
 ```bash
 curl -i -b "$UPTIME_COOKIE_JAR" \
   -H 'Origin: http://localhost:8080' \
   -H 'X-Confirm-Delete: true' \
-  -X DELETE http://localhost:8080/api/v1/sites/SITE_ID
+  -X DELETE http://localhost:8080/api/v1/projects/PROJECT_ID
 ```
 
 Удаление без заголовка подтверждения отклоняется.
+
+## Проверка Telegram-бота или сервиса без frontend
+
+Создайте heartbeat-проект:
+
+```bash
+curl -i -b "$UPTIME_COOKIE_JAR" \
+  -H 'Content-Type: application/json' \
+  -H 'Origin: http://localhost:8080' \
+  -d '{"name":"Telegram bot","monitor":{"type":"heartbeat","name":"Worker loop","check_interval_seconds":60}}' \
+  http://localhost:8080/api/v1/projects
+```
+
+Ответ один раз содержит `heartbeat_token`. Подставьте его в запрос, который бот отправляет после успешного цикла:
+
+```bash
+curl --fail -X POST http://localhost:8080/api/v1/heartbeat/HEARTBEAT_TOKEN
+```
+
+Сигнал должен приходить чаще заданного интервала. Если он пропадёт, будет открыт инцидент; следующий сигнал закроет его.
+
+## Dashboard
+
+После запуска откройте `http://localhost:8080/` или путь из `BASE_PATH`. Первый зарегистрированный пользователь становится владельцем установки. Повторная публичная регистрация автоматически закрывается.
 
 ## Тестовый запуск на сервере
 
