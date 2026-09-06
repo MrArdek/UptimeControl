@@ -310,7 +310,9 @@ func recordResult(
 	}
 
 	transition := Transition{
+		ProjectID:   monitor.ProjectID,
 		ProjectName: monitor.ProjectName,
+		MonitorID:   monitor.ID,
 		MonitorName: monitor.Name,
 		URL:         monitor.URL,
 		OccurredAt:  result.CheckedAt,
@@ -349,6 +351,27 @@ func recordResult(
 		transition.Kind = "recovered"
 	}
 	return transition, nil
+}
+
+func (store *PostgresStore) RecordDelivery(
+	ctx context.Context,
+	webhookID,
+	event string,
+	statusCode *int,
+	attempts int,
+	lastError *string,
+) error {
+	if attempts < 1 {
+		attempts = 1
+	}
+	if _, err := store.database.Exec(ctx, `
+		INSERT INTO webhook_deliveries (webhook_id, event, status_code, attempts, last_error)
+		VALUES ($1, $2, $3, $4, $5)
+	`, webhookID, event, optionalInt(statusCode), attempts, optionalError(lastError)); err != nil {
+		return fmt.Errorf("insert webhook delivery: %w", err)
+	}
+
+	return nil
 }
 
 func normalizeLimit(limit int) int {

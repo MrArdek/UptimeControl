@@ -103,6 +103,9 @@ type Store interface {
 	AddMonitor(context.Context, string, string, Monitor) (Monitor, error)
 	UpdateMonitor(context.Context, string, string, string, UpdateMonitorInput) (Monitor, error)
 	SoftDeleteMonitor(context.Context, string, string, string) error
+	ListWebhooks(context.Context, string, string) ([]Webhook, error)
+	CreateWebhook(context.Context, string, string, Webhook, []byte) (Webhook, error)
+	SoftDeleteWebhook(context.Context, string, string, string) error
 }
 
 type Service struct {

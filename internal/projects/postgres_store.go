@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/MrArdek/UptimeControl/internal/monitoring"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -439,4 +440,154 @@ func normalizeTimePointer(value *time.Time) *time.Time {
 	}
 	normalized := value.UTC()
 	return &normalized
+}
+
+func (store *PostgresStore) ListWebhooks(ctx context.Context, userID, projectID string) ([]Webhook, error) {
+	rows, err := store.database.Query(ctx, `
+		SELECT project_webhooks.id, project_webhooks.project_id, project_webhooks.url,
+		       project_webhooks.events, project_webhooks.enabled,
+		       project_webhooks.created_at, project_webhooks.updated_at
+		FROM project_webhooks
+		JOIN projects ON projects.id = project_webhooks.project_id
+		WHERE project_webhooks.project_id = $1
+		  AND projects.user_id = $2
+		  AND project_webhooks.deleted_at IS NULL
+		  AND projects.deleted_at IS NULL
+		ORDER BY project_webhooks.created_at, project_webhooks.id
+	`, projectID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list webhooks: %w", err)
+	}
+	defer rows.Close()
+
+	hooks := make([]Webhook, 0)
+	for rows.Next() {
+		var hook Webhook
+		if err := rows.Scan(
+			&hook.ID,
+			&hook.ProjectID,
+			&hook.URL,
+			&hook.Events,
+			&hook.Enabled,
+			&hook.CreatedAt,
+			&hook.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan webhook: %w", err)
+		}
+		hook.CreatedAt = hook.CreatedAt.UTC()
+		hook.UpdatedAt = hook.UpdatedAt.UTC()
+		hooks = append(hooks, hook)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate webhooks: %w", err)
+	}
+
+	return hooks, nil
+}
+
+func (store *PostgresStore) CreateWebhook(
+	ctx context.Context,
+	userID,
+	projectID string,
+	hook Webhook,
+	secret []byte,
+) (Webhook, error) {
+	err := store.database.QueryRow(ctx, `
+		INSERT INTO project_webhooks (id, project_id, url, secret, events, enabled, created_at, updated_at)
+		SELECT $1, projects.id, $3, $4, $5, $6, $7, $8
+		FROM projects
+		WHERE projects.id = $2 AND projects.user_id = $9 AND projects.deleted_at IS NULL
+		RETURNING id, project_id, url, events, enabled, created_at, updated_at
+	`,
+		hook.ID,
+		projectID,
+		hook.URL,
+		secret,
+		hook.Events,
+		hook.Enabled,
+		hook.CreatedAt,
+		hook.UpdatedAt,
+		userID,
+	).Scan(
+		&hook.ID,
+		&hook.ProjectID,
+		&hook.URL,
+		&hook.Events,
+		&hook.Enabled,
+		&hook.CreatedAt,
+		&hook.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Webhook{}, ErrNotFound
+	}
+	if err != nil {
+		return Webhook{}, fmt.Errorf("insert webhook: %w", err)
+	}
+	hook.CreatedAt = hook.CreatedAt.UTC()
+	hook.UpdatedAt = hook.UpdatedAt.UTC()
+
+	return hook, nil
+}
+
+func (store *PostgresStore) SoftDeleteWebhook(ctx context.Context, userID, projectID, webhookID string) error {
+	commandTag, err := store.database.Exec(ctx, `
+		UPDATE project_webhooks
+		SET deleted_at = now(), enabled = false, updated_at = now()
+		WHERE id = $1
+		  AND project_id = $2
+		  AND deleted_at IS NULL
+		  AND EXISTS (
+		      SELECT 1 FROM projects
+		      WHERE projects.id = $2 AND projects.user_id = $3 AND projects.deleted_at IS NULL
+		  )
+	`, webhookID, projectID, userID)
+	if err != nil {
+		return fmt.Errorf("soft-delete webhook: %w", err)
+	}
+	if commandTag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
+// ActiveWebhooks loads enabled endpoints for the notification dispatcher.
+// It intentionally takes no user ID: the project ID comes from a trusted
+// scheduler transition, and secrets never leave the backend process.
+func (store *PostgresStore) ActiveWebhooks(ctx context.Context, projectID string) ([]monitoring.WebhookEndpoint, error) {
+	rows, err := store.database.Query(ctx, `
+		SELECT project_webhooks.id, project_webhooks.project_id, project_webhooks.url,
+		       project_webhooks.secret, project_webhooks.events
+		FROM project_webhooks
+		JOIN projects ON projects.id = project_webhooks.project_id
+		WHERE project_webhooks.project_id = $1
+		  AND project_webhooks.enabled = true
+		  AND project_webhooks.deleted_at IS NULL
+		  AND projects.deleted_at IS NULL
+		ORDER BY project_webhooks.created_at, project_webhooks.id
+	`, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("list active webhooks: %w", err)
+	}
+	defer rows.Close()
+
+	endpoints := make([]monitoring.WebhookEndpoint, 0)
+	for rows.Next() {
+		var endpoint monitoring.WebhookEndpoint
+		if err := rows.Scan(
+			&endpoint.ID,
+			&endpoint.ProjectID,
+			&endpoint.URL,
+			&endpoint.Secret,
+			&endpoint.Events,
+		); err != nil {
+			return nil, fmt.Errorf("scan webhook endpoint: %w", err)
+		}
+		endpoints = append(endpoints, endpoint)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate webhook endpoints: %w", err)
+	}
+
+	return endpoints, nil
 }

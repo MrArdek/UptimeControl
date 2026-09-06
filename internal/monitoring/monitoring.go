@@ -44,7 +44,9 @@ type Incident struct {
 
 type Transition struct {
 	Kind        string
+	ProjectID   string
 	ProjectName string
+	MonitorID   string
 	MonitorName string
 	URL         string
 	OccurredAt  time.Time

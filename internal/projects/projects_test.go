@@ -3,11 +3,14 @@ package projects
 import (
 	"context"
 	"testing"
+
+	"github.com/MrArdek/UptimeControl/internal/monitoring"
 )
 
 type memoryStore struct {
 	createdProject Project
 	createdMonitor Monitor
+	webhooks       []Webhook
 }
 
 func (store *memoryStore) List(context.Context, string) ([]Project, error) { return nil, nil }
@@ -31,6 +34,18 @@ func (store *memoryStore) UpdateMonitor(context.Context, string, string, string,
 }
 func (store *memoryStore) SoftDeleteMonitor(context.Context, string, string, string) error {
 	return nil
+}
+func (store *memoryStore) ListWebhooks(context.Context, string, string) ([]Webhook, error) {
+	return store.webhooks, nil
+}
+func (store *memoryStore) CreateWebhook(_ context.Context, _ string, _ string, hook Webhook, _ []byte) (Webhook, error) {
+	return hook, nil
+}
+func (store *memoryStore) SoftDeleteWebhook(context.Context, string, string, string) error {
+	return nil
+}
+func (store *memoryStore) ActiveWebhooks(context.Context, string) ([]monitoring.WebhookEndpoint, error) {
+	return nil, nil
 }
 
 func TestCreateHTTPProject(t *testing.T) {

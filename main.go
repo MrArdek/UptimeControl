@@ -54,11 +54,19 @@ func run() error {
 
 	authentication := auth.NewService(auth.NewPostgresStore(database))
 	siteManagement := sites.NewService(sites.NewPostgresStore(database))
-	projectManagement := projects.NewService(projects.NewPostgresStore(database))
+	projectStore := projects.NewPostgresStore(database)
+	projectManagement := projects.NewService(projectStore)
 	monitorStore := monitoring.NewPostgresStore(database)
-	var notifier monitoring.Notifier
+	notifiers := make([]monitoring.Notifier, 0, 2)
 	if cfg.TelegramBotToken != "" {
-		notifier = monitoring.NewTelegramNotifier(cfg.TelegramBotToken, cfg.TelegramChatID)
+		notifiers = append(notifiers, monitoring.NewTelegramNotifier(cfg.TelegramBotToken, cfg.TelegramChatID))
+	}
+	// Webhook delivery fans out alongside Telegram: existing single-channel
+	// installations keep working unchanged when no webhook is configured.
+	notifiers = append(notifiers, monitoring.NewWebhookDispatcher(projectStore, monitorStore, logger))
+	var notifier monitoring.Notifier
+	if len(notifiers) > 0 {
+		notifier = monitoring.NewMultiNotifier(notifiers...)
 	}
 	scheduler := monitoring.NewScheduler(monitorStore, monitoring.NewHTTPChecker(), notifier, logger)
 	runtimeContext, cancelRuntime := context.WithCancel(context.Background())

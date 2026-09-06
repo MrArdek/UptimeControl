@@ -23,6 +23,9 @@ type projectService interface {
 	AddMonitor(context.Context, string, string, projects.CreateMonitorInput) (projects.Monitor, error)
 	UpdateMonitor(context.Context, string, string, string, projects.UpdateMonitorInput) (projects.Monitor, error)
 	DeleteMonitor(context.Context, string, string, string) error
+	CreateWebhook(context.Context, string, string, projects.CreateWebhookInput) (projects.Webhook, error)
+	ListWebhooks(context.Context, string, string) ([]projects.Webhook, error)
+	DeleteWebhook(context.Context, string, string, string) error
 }
 
 type historyService interface {
@@ -74,6 +77,19 @@ type projectListResponse struct {
 
 type monitorResponse struct {
 	Monitor projects.Monitor `json:"monitor"`
+}
+
+type createWebhookRequest struct {
+	URL    string `json:"url"`
+	Events string `json:"events"`
+}
+
+type webhookResponse struct {
+	Webhook projects.Webhook `json:"webhook"`
+}
+
+type webhookListResponse struct {
+	Webhooks []projects.Webhook `json:"webhooks"`
 }
 
 type checkListResponse struct {
@@ -129,6 +145,10 @@ func (handlers *projectHandlers) item(response http.ResponseWriter, request *htt
 		handlers.checks(response, request, projectID, parts[2])
 	case len(parts) == 4 && parts[1] == "monitors" && parts[3] == "incidents":
 		handlers.incidents(response, request, projectID, parts[2])
+	case len(parts) == 2 && parts[1] == "webhooks":
+		handlers.webhookCollection(response, request, projectID)
+	case len(parts) == 3 && parts[1] == "webhooks":
+		handlers.webhookItem(response, request, projectID, parts[2])
 	default:
 		writeError(response, http.StatusNotFound, "project_not_found", "project was not found")
 	}
@@ -292,6 +312,78 @@ func (handlers *projectHandlers) monitorItem(response http.ResponseWriter, reque
 	}
 }
 
+func (handlers *projectHandlers) webhookCollection(response http.ResponseWriter, request *http.Request, projectID string) {
+	switch request.Method {
+	case http.MethodGet:
+		handlers.listWebhooks(response, request, projectID)
+	case http.MethodPost:
+		handlers.createWebhook(response, request, projectID)
+	default:
+		methodNotAllowed(response, http.MethodGet+", "+http.MethodPost)
+	}
+}
+
+func (handlers *projectHandlers) webhookItem(response http.ResponseWriter, request *http.Request, projectID, webhookID string) {
+	if request.Method != http.MethodDelete {
+		methodNotAllowed(response, http.MethodDelete)
+		return
+	}
+	if !handlers.validOrigin(request) {
+		writeError(response, http.StatusForbidden, "invalid_origin", "request origin is not allowed")
+		return
+	}
+	user, ok := handlers.authorize(response, request)
+	if !ok {
+		return
+	}
+	if request.Header.Get("X-Confirm-Delete") != "true" {
+		writeError(response, http.StatusBadRequest, "confirmation_required", "webhook deletion must be explicitly confirmed")
+		return
+	}
+	if handlers.writeProjectError(response, handlers.projects.DeleteWebhook(request.Context(), user.ID, projectID, webhookID)) {
+		return
+	}
+	response.Header().Set("Cache-Control", "no-store")
+	response.WriteHeader(http.StatusNoContent)
+}
+
+func (handlers *projectHandlers) listWebhooks(response http.ResponseWriter, request *http.Request, projectID string) {
+	user, ok := handlers.authorize(response, request)
+	if !ok {
+		return
+	}
+	hooks, err := handlers.projects.ListWebhooks(request.Context(), user.ID, projectID)
+	if handlers.writeProjectError(response, err) {
+		return
+	}
+	writeJSON(response, http.StatusOK, webhookListResponse{Webhooks: hooks})
+}
+
+func (handlers *projectHandlers) createWebhook(response http.ResponseWriter, request *http.Request, projectID string) {
+	if !handlers.validOrigin(request) {
+		writeError(response, http.StatusForbidden, "invalid_origin", "request origin is not allowed")
+		return
+	}
+	user, ok := handlers.authorize(response, request)
+	if !ok {
+		return
+	}
+	var payload createWebhookRequest
+	if err := decodeJSONRequest(response, request, maximumProjectBody, &payload); err != nil {
+		writeError(response, http.StatusBadRequest, "invalid_request", "webhook fields must be a valid JSON object")
+		return
+	}
+	hook, err := handlers.projects.CreateWebhook(request.Context(), user.ID, projectID, projects.CreateWebhookInput{
+		URL:    payload.URL,
+		Events: payload.Events,
+	})
+	if handlers.writeProjectError(response, err) {
+		return
+	}
+	response.Header().Set("Location", routePath(handlers.options.BasePath, "/api/v1/projects/"+projectID+"/webhooks/"+hook.ID))
+	writeJSON(response, http.StatusCreated, webhookResponse{Webhook: hook})
+}
+
 func (handlers *projectHandlers) checks(response http.ResponseWriter, request *http.Request, projectID, monitorID string) {
 	if request.Method != http.MethodGet {
 		methodNotAllowed(response, http.MethodGet)
@@ -373,6 +465,10 @@ func (handlers *projectHandlers) writeProjectError(response http.ResponseWriter,
 		writeError(response, http.StatusBadRequest, "invalid_interval", "check interval must be between 30 and 86400 seconds")
 	case errors.Is(err, projects.ErrInvalidTimeout):
 		writeError(response, http.StatusBadRequest, "invalid_timeout", "timeout must be between 1 and 30 seconds")
+	case errors.Is(err, projects.ErrInvalidEvents):
+		writeError(response, http.StatusBadRequest, "invalid_events", "events must be a subset of down,recovered")
+	case errors.Is(err, projects.ErrTooManyWebhooks):
+		writeError(response, http.StatusConflict, "webhook_limit", "this project already has the maximum number of webhooks")
 	case errors.Is(err, projects.ErrEmptyUpdate):
 		writeError(response, http.StatusBadRequest, "empty_update", "at least one field must be provided")
 	case errors.Is(err, projects.ErrAlreadyExists):
