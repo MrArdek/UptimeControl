@@ -241,6 +241,20 @@ curl --fail -X POST http://localhost:8080/api/v1/heartbeat/HEARTBEAT_TOKEN
 
 Сигнал должен приходить чаще заданного интервала. Если он пропадёт, будет открыт инцидент; следующий сигнал закроет его.
 
+## Проверка исходящих webhooks
+
+Подпишите проект на уведомления (замените `PROJECT_ID`):
+
+```bash
+curl -i -b "$UPTIME_COOKIE_JAR" \
+  -H 'Content-Type: application/json' \
+  -H 'Origin: http://localhost:8080' \
+  -d '{"url":"https://hooks.example.com/uptime","events":"down,recovered"}' \
+  http://localhost:8080/api/v1/projects/PROJECT_ID/webhooks
+```
+
+Ответ один раз содержит `secret` — сохраните его для проверки подписи `X-UptimeControl-Signature`. Список (`GET` на тот же путь) секретов не возвращает. Подробный формат доставки описан в `docs/API.md`.
+
 ## Dashboard
 
 После запуска откройте `http://localhost:8080/` или путь из `BASE_PATH`. Первый зарегистрированный пользователь становится владельцем установки. Повторная публичная регистрация автоматически закрывается.

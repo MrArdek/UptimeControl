@@ -289,6 +289,66 @@ curl --fail -X POST 'https://uptime.example.com/api/v1/heartbeat/SECRET_TOKEN'
 
 Сигнал нужно отправлять чаще настроенного интервала. Если он не приходит вовремя, открывается инцидент; следующий heartbeat закрывает его.
 
+### Webhooks: исходящие уведомления
+
+Каждый проект может иметь до 5 webhook-эндпоинтов. При открытии (`down`) и закрытии (`recovered`) инцидента планировщик отправляет подписанный `POST` на каждый включённый URL, подписанный на это событие. Работает рядом с Telegram: старые установки без webhooks ничего не замечают.
+
+```bash
+curl -X POST "$ORIGIN/api/v1/projects/$PROJECT_ID/webhooks" \
+  -H 'Content-Type: application/json' \
+  -H "Cookie: uptime_session=$SESSION" \
+  -d '{"url":"https://hooks.example.com/uptime","events":"down,recovered"}'
+```
+
+- `url` — публичный абсолютный HTTP/HTTPS URL (та же SSRF-политика, что и у monitors);
+- `events` — подмножество `down,recovered` через запятую, по умолчанию оба события.
+
+Успех: `201 Created`, заголовок `Location` и объект `webhook`. Поле `secret` присутствует **только** в этом ответе — сырой секрет показывается один раз, в списках его нет:
+
+```json
+{
+  "webhook": {
+    "id": "00000000-0000-4000-8000-000000000002",
+    "project_id": "00000000-0000-4000-8000-000000000001",
+    "url": "https://hooks.example.com/uptime",
+    "events": "down,recovered",
+    "enabled": true,
+    "secret": "показать один раз и сохранить",
+    "created_at": "2026-09-06T12:00:00Z",
+    "updated_at": "2026-09-06T12:00:00Z"
+  }
+}
+```
+
+- `GET /api/v1/projects/{projectID}/webhooks` — список без секретов;
+- `DELETE /api/v1/projects/{projectID}/webhooks/{webhookID}` — мягкое удаление, требуется `X-Confirm-Delete: true`, ответ `204`.
+
+Ошибки совпадают с проектами, плюс `400 invalid_events` (события вне `down,recovered`) и `409 webhook_limit` (у проекта уже 5 webhooks). Чужой проект возвращает тот же `404 project_not_found`.
+
+Формат доставки:
+
+```json
+{
+  "event": "down",
+  "project_id": "00000000-0000-4000-8000-000000000001",
+  "project_name": "Public API",
+  "monitor_id": "00000000-0000-4000-8000-000000000003",
+  "monitor_name": "Health endpoint",
+  "url": "https://api.example.com/health",
+  "cause": "connection refused",
+  "occurred_at": "2026-09-06T12:00:00Z"
+}
+```
+
+Заголовки каждого запроса: `Content-Type: application/json`, `X-UptimeControl-Event: down|recovered`, `X-UptimeControl-Signature: sha256=<HMAC-SHA256(secret, body)>`. Подпись проверяйте так:
+
+```python
+hmac.compare_digest("sha256=" + hmac.new(secret, body, hashlib.sha256).hexdigest(),
+                     request.headers["X-UptimeControl-Signature"])
+```
+
+Исходящие запросы идут через тот же безопасный транспорт, что и проверки: без proxy, с DNS/IP-проверкой каждого соединения, максимум 3 редиректа только на публичные URL, таймаут 10 секунд, до 3 попыток. Итог каждой доставки пишется в `webhook_deliveries`.
+
 ## Устаревший API сайтов
 
 Следующие маршруты описывают предыдущую модель и не регистрируются основной self-hosted-точкой запуска. Они сохранены временно для понимания миграции и будут удалены после стабилизации API проектов.

@@ -1,5 +1,58 @@
 # Журнал AI-работ
 
+## 2026-09-06 — Добавлены исходящие webhooks без ломки Telegram
+
+### Что сделано
+
+- Добавлена миграция `000004_project_webhooks.up.sql`: таблицы `project_webhooks` и `webhook_deliveries`.
+- Каждый проект может иметь до 5 webhook-эндпоинтов с подпиской на `down`/`recovered`.
+- Сырой webhook-секрет возвращается только в `201 Created`, в списках и логах его нет.
+- `Transition` получил `ProjectID`/`MonitorID`; доставка идёт через `MultiNotifier` рядом с Telegram, старые установки без webhooks работают как раньше.
+- Общий безопасный транспорт вынесен в `netpolicy` (без proxy, DNS/IP-проверка каждого соединения, 3 редиректа, таймаут 10 с) и используется доставкой webhooks.
+- Каждый payload подписан `HMAC-SHA256`, заголовки `X-UptimeControl-Event` и `X-UptimeControl-Signature`; до 3 попыток, исход пишется в `webhook_deliveries`.
+- Добавлены ручки `GET/POST /api/v1/projects/{id}/webhooks` и `DELETE .../webhooks/{wid}` с проверкой владельца и `X-Confirm-Delete`.
+- Новых зависимостей нет — только stdlib + существующие `pgx`/`x/crypto`.
+
+### Основные изменённые файлы
+
+- `main.go`
+- `internal/migrations/sql/000004_project_webhooks.up.sql`
+- `internal/monitoring/monitoring.go`
+- `internal/monitoring/notify.go`
+- `internal/monitoring/webhook.go`
+- `internal/monitoring/webhook_test.go`
+- `internal/monitoring/postgres_store.go`
+- `internal/netpolicy/transport.go`
+- `internal/netpolicy/transport_test.go`
+- `internal/projects/webhooks.go`
+- `internal/projects/webhooks_test.go`
+- `internal/projects/postgres_store.go`
+- `internal/projects/projects.go`
+- `internal/httpserver/project_handlers.go`
+- `internal/httpserver/project_handlers_test.go`
+- документы `API`, `DATABASE`, `SECURITY`, `ROUTES_AUDIT`, `VERIFICATION`, `PROJECT_MAP`, `PROJECT_STATE`, `PLAN`.
+
+### Как проверить
+
+Команды запуска и примеры запросов находятся в `docs/SETUP.md`, формат webhook — в `docs/API.md`, последний результат — в `docs/VERIFICATION.md`.
+
+### Результат проверки
+
+- `gofmt`, `go vet ./...`, `go build ./...` — успешно;
+- `go test ./...` и `go test -race` по новым и старым пакетам — успешно;
+- все 4 миграции применены по порядку на PostgreSQL 18 во временном контейнере;
+- интеграционные тесты (`TEST_DATABASE_URL`) — успешно, включая существующий heartbeat-тест;
+- создание webhook — `201` с одноразовым секретом; список — `200` без секретов;
+- невалидные события — `400`; шестой webhook — `409`; удаление без подтверждения — `400`, с подтверждением — `204`;
+- подпись payload и фильтр событий подтверждены тестами; private URL отклоняется до соединения;
+- временные базы и контейнер после проверки удалены.
+
+### Риски и ограничения
+
+- Сквозная доставка на внешний URL из production-подобной сети не проверена: SSRF-защита режет loopback, поэтому юнит-тесты используют стабы отправителя.
+- Повторные попытки выполняются синхронно в воркере планировщика; при многих висящих получателях пакет может задержаться — позже вынести в очередь.
+- SSE для живого Dashboard — следующий шаг, polling пока остаётся.
+
 ## 2026-09-06 — Собран self-hosted MVP мониторинга проектов
 
 ### Что сделано

@@ -28,6 +28,8 @@
 | GET | `/api/v1/projects/{projectID}/monitors/{monitorID}/checks` | История проверок | Владелец | Фильтр через project owner |
 | GET | `/api/v1/projects/{projectID}/monitors/{monitorID}/incidents` | История инцидентов | Владелец | Фильтр через project owner |
 | POST | `/api/v1/heartbeat/{token}` | Сигнал бота/worker | Секретный токен | В БД только SHA-256; неизвестный токен тоже получает `204` |
+| GET/POST | `/api/v1/projects/{projectID}/webhooks` | Список и создание webhooks | Владелец | Владелец проекта, Origin для POST, URL по SSRF-политике, до 5 на проект |
+| DELETE | `/api/v1/projects/{projectID}/webhooks/{webhookID}` | Удаление webhook | Владелец | Проект, webhook и владелец; подтверждение удаления |
 
 ## Реализованные роли
 

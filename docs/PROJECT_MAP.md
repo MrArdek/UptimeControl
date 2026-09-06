@@ -42,6 +42,7 @@ UptimeControl/
 │   │   ├── dashboard.go
 │   │   ├── heartbeat_handler.go
 │   │   ├── project_handlers.go
+│   │   ├── project_handlers_test.go
 │   │   ├── rate_limiter.go
 │   │   ├── rate_limiter_test.go
 │   │   ├── server.go
@@ -57,21 +58,29 @@ UptimeControl/
 │   │   │   ├── 000001_initial_schema.up.sql
 │   │   │   ├── 000002_unique_active_site_url.up.sql
 │   │   │   ├── 000003_projects_and_monitors.up.sql
+│   │   │   ├── 000004_project_webhooks.up.sql
 │   │   │   └── README.md
 │   │   └── migrations.go
 │   ├── monitoring/
 │   │   ├── checker.go
+│   │   ├── notify.go
 │   │   ├── postgres_store.go
 │   │   ├── scheduler.go
-│   │   └── telegram.go
+│   │   ├── telegram.go
+│   │   ├── webhook.go
+│   │   └── webhook_test.go
 │   ├── netpolicy/
-│   │   └── httpurl.go
+│   │   ├── httpurl.go
+│   │   ├── transport.go
+│   │   └── transport_test.go
 │   ├── postgres/
 │   │   ├── postgres.go
 │   │   └── postgres_test.go
 │   ├── projects/
 │   │   ├── postgres_store.go
-│   │   └── projects.go
+│   │   ├── projects.go
+│   │   ├── webhooks.go
+│   │   └── webhooks_test.go
 │   └── sites/
 │       ├── postgres_store.go
 │       ├── sites.go
@@ -121,15 +130,15 @@ UptimeControl/
 
 ### `/internal/projects`
 
-Бизнес-правила и PostgreSQL-запросы проектов и их HTTP/heartbeat monitors. Здесь находятся проверки владельца, мягкое удаление и одноразовая генерация heartbeat-токена.
+Бизнес-правила и PostgreSQL-запросы проектов, их HTTP/heartbeat monitors и исходящих webhooks. Здесь находятся проверки владельца, мягкое удаление, одноразовая генерация heartbeat-токена и одноразовый webhook-секрет.
 
 ### `/internal/monitoring`
 
-Планировщик заданий, безопасный HTTP checker, запись истории и инцидентов, приём heartbeat и Telegram-уведомления.
+Планировщик заданий, безопасный HTTP checker, запись истории и инцидентов, приём heartbeat, Telegram-уведомления и диспетчер исходящих webhooks (`MultiNotifier` рассылает событие всем каналам, не ломая старые).
 
 ### `/internal/netpolicy`
 
-Общая нормализация публичных HTTP/HTTPS URL и запрет внутренних/private IP для защиты от SSRF и DNS rebinding.
+Общая нормализация публичных HTTP/HTTPS URL, запрет внутренних/private IP и безопасный HTTP-транспорт для защиты от SSRF и DNS rebinding. Используется и checker, и доставкой webhooks.
 
 ### `/internal/identity`
 
