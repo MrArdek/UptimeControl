@@ -15,6 +15,7 @@ UptimeControl/
 │   ├── AI_WORKLOG.md
 │   ├── BACKUP.md
 │   ├── DATABASE.md
+│   ├── DATA_CONTRACTS.md
 │   ├── DECISIONS.md
 │   ├── PLAN.md
 │   ├── PROJECT_MAP.md
@@ -187,6 +188,7 @@ UptimeControl/
 - `PROJECT_STATE.md` — текущее фактическое состояние.
 - `API.md` — документация реализованных HTTP-маршрутов.
 - `DATABASE.md` — таблицы, связи, индексы и правила изменения схемы.
+- `DATA_CONTRACTS.md` — определения метрик, будущие ingest API, дедупликация, лимиты, retention и нагрузочный профиль.
 - `DECISIONS.md` — принятые технические решения и их ограничения.
 - `PLAN.md` — этапы разработки и открытые вопросы.
 - `BACKUP.md` — требования к резервным копиям и восстановлению.

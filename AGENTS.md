@@ -13,9 +13,10 @@ Self-hosted мониторинг проектов: Go 1.27 (только stdlib 
 | `VERIFICATION.md` | Команды проверки и результат последнего прогона |
 | `API.md` | Актуальные маршруты (projects, monitors, heartbeat); `sites` — legacy |
 | `DATABASE.md` | Таблицы, связи, правила изменения схемы |
+| `DATA_CONTRACTS.md` | Определения метрик, ingest-контракты, дедупликация, retention и нагрузочный профиль |
 | `SECURITY.md` | Секреты, логи, SSRF, heartbeat-токены, rate-limit |
 | `DECISIONS.md` | Почему stdlib / pgx / self-hosted / `BASE_PATH`, правило новых зависимостей |
-| `PLAN.md` | Границы MVP и следующие шаги (TCP, регионы, трекер, агент — не MVP) |
+| `PLAN.md` | Полная дорожная карта: завершённый MVP, TCP, регионы, трекер, агент и релиз |
 | `PROJECT_MAP.md` | Дерево репо и ответственность каждой папки |
 | `SERVER_INSTALL.md`, `BACKUP.md` | Деплой на отдельный сервер, бэкапы |
 | `ROUTES_AUDIT.md` | Аудит маршрутов и прав доступа |
