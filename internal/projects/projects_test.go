@@ -160,4 +160,10 @@ func TestProjectPaginationCreatesScopedCursor(t *testing.T) {
 	if _, err := service.ListPage(context.Background(), "another-owner", 1, *page.NextCursor); err != ErrInvalidCursor {
 		t.Fatalf("cross-owner cursor error = %v, want ErrInvalidCursor", err)
 	}
+	if _, err := service.ListPage(context.Background(), "owner-id", 1, *page.NextCursor); err != nil {
+		t.Fatalf("same-owner cursor: %v", err)
+	}
+	if store.pageRequest.BeforeTime == nil || !store.pageRequest.BeforeTime.Equal(createdAt) || store.pageRequest.BeforeID != page.Projects[0].ID {
+		t.Fatalf("decoded page request = %#v", store.pageRequest)
+	}
 }

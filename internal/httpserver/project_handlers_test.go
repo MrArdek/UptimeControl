@@ -14,6 +14,8 @@ import (
 )
 
 type configurableProjectService struct {
+	project        projects.Project
+	projectErr     error
 	createdWebhook projects.Webhook
 	createHookErr  error
 	createHookUser string
@@ -27,7 +29,40 @@ func (service *configurableProjectService) ListPage(context.Context, string, int
 	return projects.ProjectPage{}, nil
 }
 func (service *configurableProjectService) ByID(context.Context, string, string) (projects.Project, error) {
-	return projects.Project{}, nil
+	return service.project, service.projectErr
+}
+
+func TestHistoryRequiresMonitorInOwnedProject(t *testing.T) {
+	service := &configurableProjectService{project: projects.Project{Monitors: []projects.Monitor{{
+		ID: "22222222-2222-4222-8222-222222222222",
+	}}}}
+	handlers := authenticatedProjectHandlers(service)
+	request := httptest.NewRequest(http.MethodGet,
+		"/api/v1/projects/11111111-1111-4111-8111-111111111111/monitors/33333333-3333-4333-8333-333333333333/checks", nil)
+	addSessionCookie(request)
+	response := httptest.NewRecorder()
+
+	handlers.item(response, request)
+
+	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), `"code":"monitor_not_found"`) {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+}
+
+func TestHistoryRejectsInvalidPeriod(t *testing.T) {
+	monitorID := "22222222-2222-4222-8222-222222222222"
+	service := &configurableProjectService{project: projects.Project{Monitors: []projects.Monitor{{ID: monitorID}}}}
+	handlers := authenticatedProjectHandlers(service)
+	request := httptest.NewRequest(http.MethodGet,
+		"/api/v1/projects/11111111-1111-4111-8111-111111111111/monitors/"+monitorID+"/checks?from=2026-09-08T12:00:00Z&to=2026-09-07T12:00:00Z", nil)
+	addSessionCookie(request)
+	response := httptest.NewRecorder()
+
+	handlers.item(response, request)
+
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"code":"invalid_period"`) {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
 }
 func (service *configurableProjectService) Create(context.Context, string, projects.CreateProjectInput) (projects.Project, error) {
 	return projects.Project{}, nil
