@@ -30,6 +30,7 @@ var (
 	ErrInvalidName        = errors.New("invalid name")
 	ErrInvalidDescription = errors.New("invalid description")
 	ErrInvalidURL         = errors.New("invalid monitor URL")
+	ErrInvalidTarget      = errors.New("invalid monitor target")
 	ErrInvalidType        = errors.New("invalid monitor type")
 	ErrInvalidInterval    = errors.New("invalid check interval")
 	ErrInvalidTimeout     = errors.New("invalid timeout")
@@ -53,6 +54,7 @@ type Monitor struct {
 	Type                 string     `json:"type"`
 	Name                 string     `json:"name"`
 	URL                  string     `json:"url"`
+	Target               string     `json:"target,omitempty"`
 	CheckIntervalSeconds int        `json:"check_interval_seconds"`
 	TimeoutSeconds       int        `json:"timeout_seconds"`
 	Enabled              bool       `json:"enabled"`
@@ -82,6 +84,7 @@ type CreateMonitorInput struct {
 	Type                 string
 	Name                 string
 	URL                  string
+	Target               string
 	CheckIntervalSeconds *int
 	TimeoutSeconds       *int
 }
@@ -89,6 +92,7 @@ type CreateMonitorInput struct {
 type UpdateMonitorInput struct {
 	Name                 *string
 	URL                  *string
+	Target               *string
 	CheckIntervalSeconds *int
 	TimeoutSeconds       *int
 	Enabled              *bool
@@ -234,8 +238,22 @@ func (service *Service) UpdateMonitor(
 	if !identity.ValidUUID(projectID) || !identity.ValidUUID(monitorID) {
 		return Monitor{}, ErrNotFound
 	}
-	if input.Name == nil && input.URL == nil && input.CheckIntervalSeconds == nil && input.TimeoutSeconds == nil && input.Enabled == nil {
+	if input.Name == nil && input.URL == nil && input.Target == nil && input.CheckIntervalSeconds == nil && input.TimeoutSeconds == nil && input.Enabled == nil {
 		return Monitor{}, ErrEmptyUpdate
+	}
+	project, err := service.store.ByID(ctx, userID, projectID)
+	if err != nil {
+		return Monitor{}, err
+	}
+	var current *Monitor
+	for index := range project.Monitors {
+		if project.Monitors[index].ID == monitorID {
+			current = &project.Monitors[index]
+			break
+		}
+	}
+	if current == nil {
+		return Monitor{}, ErrNotFound
 	}
 	if input.Name != nil {
 		name, err := normalizeName(*input.Name)
@@ -245,11 +263,24 @@ func (service *Service) UpdateMonitor(
 		input.Name = &name
 	}
 	if input.URL != nil {
+		if current.Type != "http" {
+			return Monitor{}, ErrInvalidURL
+		}
 		normalizedURL, err := netpolicy.NormalizeHTTPURL(*input.URL)
 		if err != nil {
 			return Monitor{}, ErrInvalidURL
 		}
 		input.URL = &normalizedURL
+	}
+	if input.Target != nil {
+		if current.Type != "tcp" {
+			return Monitor{}, ErrInvalidTarget
+		}
+		normalizedTarget, err := netpolicy.NormalizeTCPAddress(*input.Target)
+		if err != nil {
+			return Monitor{}, ErrInvalidTarget
+		}
+		input.Target = &normalizedTarget
 	}
 	if input.CheckIntervalSeconds != nil && !validInterval(*input.CheckIntervalSeconds) {
 		return Monitor{}, ErrInvalidInterval
@@ -277,10 +308,14 @@ func (service *Service) newMonitor(projectID string, input CreateMonitorInput) (
 		monitorType = "http"
 	}
 	var normalizedURL string
+	var normalizedTarget string
 	var heartbeatToken string
 	var heartbeatTokenHash []byte
 	switch monitorType {
 	case "http":
+		if strings.TrimSpace(input.Target) != "" {
+			return Monitor{}, ErrInvalidTarget
+		}
 		normalizedURL, err = netpolicy.NormalizeHTTPURL(input.URL)
 		if err != nil {
 			return Monitor{}, ErrInvalidURL
@@ -289,9 +324,20 @@ func (service *Service) newMonitor(projectID string, input CreateMonitorInput) (
 		if strings.TrimSpace(input.URL) != "" {
 			return Monitor{}, ErrInvalidURL
 		}
+		if strings.TrimSpace(input.Target) != "" {
+			return Monitor{}, ErrInvalidTarget
+		}
 		heartbeatToken, heartbeatTokenHash, err = newHeartbeatToken()
 		if err != nil {
 			return Monitor{}, fmt.Errorf("generate heartbeat token: %w", err)
+		}
+	case "tcp":
+		if strings.TrimSpace(input.URL) != "" {
+			return Monitor{}, ErrInvalidURL
+		}
+		normalizedTarget, err = netpolicy.NormalizeTCPAddress(input.Target)
+		if err != nil {
+			return Monitor{}, ErrInvalidTarget
 		}
 	default:
 		return Monitor{}, ErrInvalidType
@@ -320,6 +366,7 @@ func (service *Service) newMonitor(projectID string, input CreateMonitorInput) (
 		Type:                 monitorType,
 		Name:                 name,
 		URL:                  normalizedURL,
+		Target:               normalizedTarget,
 		CheckIntervalSeconds: interval,
 		TimeoutSeconds:       timeout,
 		Enabled:              true,

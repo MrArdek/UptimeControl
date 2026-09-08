@@ -23,16 +23,20 @@ type addressResolver interface {
 	LookupNetIP(context.Context, string, string) ([]netip.Addr, error)
 }
 
+type connectionDialer interface {
+	DialContext(context.Context, string, string) (net.Conn, error)
+}
+
 type HTTPChecker struct {
 	resolver addressResolver
-	dialer   net.Dialer
+	dialer   connectionDialer
 	now      func() time.Time
 }
 
 func NewHTTPChecker() *HTTPChecker {
 	return &HTTPChecker{
 		resolver: net.DefaultResolver,
-		dialer: net.Dialer{
+		dialer: &net.Dialer{
 			Timeout:   5 * time.Second,
 			KeepAlive: 15 * time.Second,
 		},
@@ -43,7 +47,11 @@ func NewHTTPChecker() *HTTPChecker {
 func (checker *HTTPChecker) Check(ctx context.Context, monitor DueMonitor) Result {
 	checkedAt := checker.now().UTC()
 	result := Result{CheckedAt: checkedAt}
-	if monitor.Type != "http" {
+	switch monitor.Type {
+	case "tcp":
+		return checker.checkTCP(ctx, monitor, result)
+	case "http":
+	default:
 		message := "unsupported monitor type"
 		result.Error = &message
 		return result
@@ -112,6 +120,36 @@ func (checker *HTTPChecker) Check(ctx context.Context, monitor DueMonitor) Resul
 		message := fmt.Sprintf("unexpected HTTP status %d", statusCode)
 		result.Error = &message
 	}
+	return result
+}
+
+func (checker *HTTPChecker) checkTCP(ctx context.Context, monitor DueMonitor, result Result) Result {
+	target, err := netpolicy.NormalizeTCPAddress(monitor.Target)
+	if err != nil {
+		message := "unsafe TCP target"
+		result.Error = &message
+		return result
+	}
+	timeout := time.Duration(monitor.TimeoutSeconds) * time.Second
+	if timeout <= 0 || timeout > 30*time.Second {
+		timeout = defaultTimeout
+	}
+	checkContext, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	startedAt := checker.now()
+	connection, err := checker.dialContext(checkContext, "tcp", target)
+	elapsed := checker.now().Sub(startedAt).Milliseconds()
+	if elapsed < 0 {
+		elapsed = 0
+	}
+	result.ResponseTimeMS = &elapsed
+	if err != nil {
+		message := safeNetworkError(err)
+		result.Error = &message
+		return result
+	}
+	_ = connection.Close()
+	result.Available = true
 	return result
 }
 

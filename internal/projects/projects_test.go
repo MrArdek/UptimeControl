@@ -105,3 +105,34 @@ func TestCreateRejectsUnsupportedMonitorType(t *testing.T) {
 		t.Fatalf("Create() error = %v, want ErrInvalidType", err)
 	}
 }
+
+func TestCreateTCPProjectNormalizesTarget(t *testing.T) {
+	store := &memoryStore{}
+	service := NewService(store)
+	project, err := service.Create(context.Background(), "owner-id", CreateProjectInput{
+		Name: "PostgreSQL",
+		Monitor: CreateMonitorInput{
+			Type:   "tcp",
+			Name:   "Database port",
+			Target: " DB.Example.COM:5432 ",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Create() returned an error: %v", err)
+	}
+	monitor := project.Monitors[0]
+	if monitor.Type != "tcp" || monitor.Target != "db.example.com:5432" || monitor.URL != "" {
+		t.Fatalf("TCP monitor was not normalized: %#v", monitor)
+	}
+}
+
+func TestCreateTCPProjectRejectsPrivateTarget(t *testing.T) {
+	service := NewService(&memoryStore{})
+	_, err := service.Create(context.Background(), "owner-id", CreateProjectInput{
+		Name:    "Private database",
+		Monitor: CreateMonitorInput{Type: "tcp", Name: "Database", Target: "127.0.0.1:5432"},
+	})
+	if err != ErrInvalidTarget {
+		t.Fatalf("Create() error = %v, want ErrInvalidTarget", err)
+	}
+}

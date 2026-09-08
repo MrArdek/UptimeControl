@@ -60,6 +60,8 @@ func transitionMessage(transition Transition) string {
 	}
 	if transition.URL != "" {
 		lines = append(lines, "Адрес: "+transition.URL)
+	} else if transition.Target != "" {
+		lines = append(lines, "Адрес: "+transition.Target)
 	}
 	if transition.Cause != "" && transition.Kind == "down" {
 		lines = append(lines, "Причина: "+transition.Cause)

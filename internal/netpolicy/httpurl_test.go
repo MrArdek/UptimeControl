@@ -49,3 +49,36 @@ func TestAddressAllowed(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeTCPAddress(t *testing.T) {
+	tests := map[string]string{
+		" Example.COM:443 ": "example.com:443",
+		"[2606:4700::1]:53": "[2606:4700::1]:53",
+	}
+	for input, want := range tests {
+		got, err := NormalizeTCPAddress(input)
+		if err != nil {
+			t.Fatalf("NormalizeTCPAddress(%q): %v", input, err)
+		}
+		if got != want {
+			t.Fatalf("NormalizeTCPAddress(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestNormalizeTCPAddressRejectsUnsafeTargets(t *testing.T) {
+	for _, target := range []string{
+		"localhost:5432",
+		"127.0.0.1:22",
+		"10.0.0.1:6379",
+		"metadata.internal:80",
+		"example.com",
+		"https://example.com:443",
+		"example.com:0",
+		"example.com:65536",
+	} {
+		if _, err := NormalizeTCPAddress(target); err == nil {
+			t.Fatalf("NormalizeTCPAddress(%q) returned no error", target)
+		}
+	}
+}

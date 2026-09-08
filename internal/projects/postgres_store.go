@@ -17,6 +17,7 @@ const (
 	maximumListedProjects      = 100
 	uniqueViolationCode        = "23505"
 	uniqueMonitorURLConstraint = "monitors_project_url_unique_active"
+	uniqueMonitorTCPConstraint = "monitors_project_tcp_target_unique_active"
 )
 
 type PostgresStore struct {
@@ -177,18 +178,19 @@ func (store *PostgresStore) AddMonitor(
 ) (Monitor, error) {
 	commandTag, err := store.database.Exec(ctx, `
 		INSERT INTO monitors (
-			id, project_id, type, name, url, heartbeat_token_hash, check_interval_seconds,
+			id, project_id, type, name, url, target, heartbeat_token_hash, check_interval_seconds,
 			timeout_seconds, enabled, next_check_at, created_at, updated_at
 		)
-		SELECT $1, projects.id, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+		SELECT $1, projects.id, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13
 		FROM projects
-		WHERE projects.id = $2 AND projects.user_id = $13 AND projects.deleted_at IS NULL
+		WHERE projects.id = $2 AND projects.user_id = $14 AND projects.deleted_at IS NULL
 	`,
 		monitor.ID,
 		projectID,
 		monitor.Type,
 		monitor.Name,
 		monitor.URL,
+		monitor.Target,
 		monitor.HeartbeatTokenHash,
 		monitor.CheckIntervalSeconds,
 		monitor.TimeoutSeconds,
@@ -221,11 +223,12 @@ func (store *PostgresStore) UpdateMonitor(
 		UPDATE monitors
 		SET name = COALESCE($4, name),
 		    url = COALESCE($5, url),
-		    check_interval_seconds = COALESCE($6, check_interval_seconds),
-		    timeout_seconds = COALESCE($7, timeout_seconds),
-		    enabled = COALESCE($8, enabled),
+		    target = COALESCE($6, target),
+		    check_interval_seconds = COALESCE($7, check_interval_seconds),
+		    timeout_seconds = COALESCE($8, timeout_seconds),
+		    enabled = COALESCE($9, enabled),
 		    next_check_at = CASE
-		        WHEN COALESCE($8, enabled) THEN LEAST(next_check_at, now())
+		        WHEN COALESCE($9, enabled) THEN LEAST(next_check_at, now())
 		        ELSE next_check_at
 		    END,
 		    updated_at = now()
@@ -236,7 +239,7 @@ func (store *PostgresStore) UpdateMonitor(
 		      SELECT 1 FROM projects
 		      WHERE projects.id = $2 AND projects.user_id = $3 AND projects.deleted_at IS NULL
 		  )
-		RETURNING id, project_id, type, name, url, check_interval_seconds,
+		RETURNING id, project_id, type, name, url, target, check_interval_seconds,
 		          timeout_seconds, enabled, last_checked_at, last_available,
 		          last_status_code, last_response_time_ms, last_error, created_at, updated_at
 	`,
@@ -245,6 +248,7 @@ func (store *PostgresStore) UpdateMonitor(
 		userID,
 		optionalString(input.Name),
 		optionalString(input.URL),
+		optionalString(input.Target),
 		optionalInt(input.CheckIntervalSeconds),
 		optionalInt(input.TimeoutSeconds),
 		optionalBool(input.Enabled),
@@ -285,7 +289,7 @@ func (store *PostgresStore) SoftDeleteMonitor(ctx context.Context, userID, proje
 
 func (store *PostgresStore) listMonitors(ctx context.Context, projectID string) ([]Monitor, error) {
 	rows, err := store.database.Query(ctx, `
-		SELECT id, project_id, type, name, url, check_interval_seconds,
+		SELECT id, project_id, type, name, url, target, check_interval_seconds,
 		       timeout_seconds, enabled, last_checked_at, last_available,
 		       last_status_code, last_response_time_ms, last_error, created_at, updated_at
 		FROM monitors
@@ -328,6 +332,7 @@ func scanMonitor(row rowScanner) (Monitor, error) {
 		&monitor.Type,
 		&monitor.Name,
 		&monitor.URL,
+		&monitor.Target,
 		&monitor.CheckIntervalSeconds,
 		&monitor.TimeoutSeconds,
 		&monitor.Enabled,
@@ -372,16 +377,17 @@ func insertMonitor(ctx context.Context, executor interface {
 }, monitor Monitor) error {
 	_, err := executor.Exec(ctx, `
 		INSERT INTO monitors (
-			id, project_id, type, name, url, heartbeat_token_hash, check_interval_seconds,
+			id, project_id, type, name, url, target, heartbeat_token_hash, check_interval_seconds,
 			timeout_seconds, enabled, next_check_at, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 	`,
 		monitor.ID,
 		monitor.ProjectID,
 		monitor.Type,
 		monitor.Name,
 		monitor.URL,
+		monitor.Target,
 		monitor.HeartbeatTokenHash,
 		monitor.CheckIntervalSeconds,
 		monitor.TimeoutSeconds,
@@ -403,7 +409,8 @@ func isDuplicateMonitorURL(err error) bool {
 	var postgresError *pgconn.PgError
 	return errors.As(err, &postgresError) &&
 		postgresError.Code == uniqueViolationCode &&
-		postgresError.ConstraintName == uniqueMonitorURLConstraint
+		(postgresError.ConstraintName == uniqueMonitorURLConstraint ||
+			postgresError.ConstraintName == uniqueMonitorTCPConstraint)
 }
 
 func initialNextCheck(monitor Monitor) time.Time {

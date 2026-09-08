@@ -52,6 +52,7 @@ type webhookPayload struct {
 	MonitorID   string `json:"monitor_id"`
 	MonitorName string `json:"monitor_name"`
 	URL         string `json:"url"`
+	Target      string `json:"target,omitempty"`
 	Cause       string `json:"cause"`
 	OccurredAt  string `json:"occurred_at"`
 }
@@ -137,6 +138,7 @@ func (dispatcher *WebhookDispatcher) deliver(ctx context.Context, endpoint Webho
 		MonitorID:   transition.MonitorID,
 		MonitorName: transition.MonitorName,
 		URL:         transition.URL,
+		Target:      transition.Target,
 		Cause:       transition.Cause,
 		OccurredAt:  transition.OccurredAt.UTC().Format(time.RFC3339),
 	})

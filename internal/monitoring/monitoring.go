@@ -15,6 +15,7 @@ type DueMonitor struct {
 	Name           string
 	Type           string
 	URL            string
+	Target         string
 	TimeoutSeconds int
 }
 
@@ -49,6 +50,7 @@ type Transition struct {
 	MonitorID   string
 	MonitorName string
 	URL         string
+	Target      string
 	OccurredAt  time.Time
 	Cause       string
 }

@@ -48,7 +48,7 @@ func (store *PostgresStore) ClaimDue(ctx context.Context, now time.Time, limit i
 		WHERE monitors.id = due.id
 		  AND projects.id = monitors.project_id
 		RETURNING monitors.id, monitors.project_id, projects.name, monitors.name,
-		          monitors.type, monitors.url, monitors.timeout_seconds
+		          monitors.type, monitors.url, monitors.target, monitors.timeout_seconds
 	`, now, limit)
 	if err != nil {
 		return nil, fmt.Errorf("claim due monitors: %w", err)
@@ -65,6 +65,7 @@ func (store *PostgresStore) ClaimDue(ctx context.Context, now time.Time, limit i
 			&monitor.Name,
 			&monitor.Type,
 			&monitor.URL,
+			&monitor.Target,
 			&monitor.TimeoutSeconds,
 		); err != nil {
 			return nil, fmt.Errorf("scan due monitor: %w", err)
@@ -112,7 +113,7 @@ func (store *PostgresStore) RecordHeartbeat(
 	var monitor DueMonitor
 	err = transaction.QueryRow(ctx, `
 		SELECT monitors.id, monitors.project_id, projects.name, monitors.name,
-		       monitors.type, monitors.url, monitors.timeout_seconds
+		       monitors.type, monitors.url, monitors.target, monitors.timeout_seconds
 		FROM monitors
 		JOIN projects ON projects.id = monitors.project_id
 		WHERE monitors.heartbeat_token_hash = $1
@@ -128,6 +129,7 @@ func (store *PostgresStore) RecordHeartbeat(
 		&monitor.Name,
 		&monitor.Type,
 		&monitor.URL,
+		&monitor.Target,
 		&monitor.TimeoutSeconds,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -315,6 +317,7 @@ func recordResult(
 		MonitorID:   monitor.ID,
 		MonitorName: monitor.Name,
 		URL:         monitor.URL,
+		Target:      monitor.Target,
 		OccurredAt:  result.CheckedAt,
 	}
 	if !result.Available {

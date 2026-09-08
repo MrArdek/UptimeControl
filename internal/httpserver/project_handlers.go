@@ -55,6 +55,7 @@ type createMonitorRequest struct {
 	Type                 string `json:"type"`
 	Name                 string `json:"name"`
 	URL                  string `json:"url"`
+	Target               string `json:"target"`
 	CheckIntervalSeconds *int   `json:"check_interval_seconds"`
 	TimeoutSeconds       *int   `json:"timeout_seconds"`
 }
@@ -62,6 +63,7 @@ type createMonitorRequest struct {
 type updateMonitorRequest struct {
 	Name                 *string `json:"name"`
 	URL                  *string `json:"url"`
+	Target               *string `json:"target"`
 	CheckIntervalSeconds *int    `json:"check_interval_seconds"`
 	TimeoutSeconds       *int    `json:"timeout_seconds"`
 	Enabled              *bool   `json:"enabled"`
@@ -291,7 +293,7 @@ func (handlers *projectHandlers) monitorItem(response http.ResponseWriter, reque
 			return
 		}
 		monitor, err := handlers.projects.UpdateMonitor(request.Context(), user.ID, projectID, monitorID, projects.UpdateMonitorInput{
-			Name: payload.Name, URL: payload.URL, CheckIntervalSeconds: payload.CheckIntervalSeconds,
+			Name: payload.Name, URL: payload.URL, Target: payload.Target, CheckIntervalSeconds: payload.CheckIntervalSeconds,
 			TimeoutSeconds: payload.TimeoutSeconds, Enabled: payload.Enabled,
 		})
 		if handlers.writeProjectError(response, err) {
@@ -458,9 +460,11 @@ func (handlers *projectHandlers) writeProjectError(response http.ResponseWriter,
 	case errors.Is(err, projects.ErrInvalidDescription):
 		writeError(response, http.StatusBadRequest, "invalid_description", "description is too long")
 	case errors.Is(err, projects.ErrInvalidType):
-		writeError(response, http.StatusBadRequest, "invalid_monitor_type", "monitor type must be http or heartbeat")
+		writeError(response, http.StatusBadRequest, "invalid_monitor_type", "monitor type must be http, tcp or heartbeat")
 	case errors.Is(err, projects.ErrInvalidURL):
 		writeError(response, http.StatusBadRequest, "invalid_url", "URL must be a public HTTP or HTTPS address")
+	case errors.Is(err, projects.ErrInvalidTarget):
+		writeError(response, http.StatusBadRequest, "invalid_target", "target must be a public host and port")
 	case errors.Is(err, projects.ErrInvalidInterval):
 		writeError(response, http.StatusBadRequest, "invalid_interval", "check interval must be between 30 and 86400 seconds")
 	case errors.Is(err, projects.ErrInvalidTimeout):
@@ -483,7 +487,7 @@ func (handlers *projectHandlers) writeProjectError(response http.ResponseWriter,
 
 func (request createMonitorRequest) input() projects.CreateMonitorInput {
 	return projects.CreateMonitorInput{
-		Type: request.Type, Name: request.Name, URL: request.URL,
+		Type: request.Type, Name: request.Name, URL: request.URL, Target: request.Target,
 		CheckIntervalSeconds: request.CheckIntervalSeconds, TimeoutSeconds: request.TimeoutSeconds,
 	}
 }
