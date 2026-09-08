@@ -1,6 +1,6 @@
 # Аудит маршрутов и ролей
 
-Дата актуализации: 2026-09-06
+Дата актуализации: 2026-09-08
 
 ## Текущее состояние
 
@@ -21,12 +21,13 @@
 | POST | `/api/v1/auth/logout` | Отзыв текущей сессии | Пользователь | Cookie-сессия и Origin; cookie удаляется |
 | GET | `/api/v1/auth/me` | Текущий пользователь | Пользователь | Только действующая неотозванная cookie-сессия |
 | GET | `/` | Встроенный Dashboard | Публичный экран входа | CSP, no-store; данные доступны только после auth API |
-| GET/POST | `/api/v1/projects` | Список и создание проектов | Владелец | Cookie, владелец из сессии, Origin для POST |
+| GET/POST | `/api/v1/projects` | Пагинированный список и создание проектов | Владелец | Cookie, курсор привязан к владельцу, Origin для POST |
 | GET/PATCH/DELETE | `/api/v1/projects/{projectID}` | Проект | Владелец | `project.id` и `user_id`; подтверждение удаления |
 | POST | `/api/v1/projects/{projectID}/monitors` | Добавление monitor | Владелец | Владелец проекта, Origin, валидация типа/цели |
 | PATCH/DELETE | `/api/v1/projects/{projectID}/monitors/{monitorID}` | Управление monitor | Владелец | Проект, monitor и владелец проверяются на backend |
-| GET | `/api/v1/projects/{projectID}/monitors/{monitorID}/checks` | История проверок | Владелец | Фильтр через project owner |
-| GET | `/api/v1/projects/{projectID}/monitors/{monitorID}/incidents` | История инцидентов | Владелец | Фильтр через project owner |
+| GET | `/api/v1/projects/{projectID}/monitors/{monitorID}/checks` | История проверок за период | Владелец | Владелец и monitor проверяются до чтения; курсор привязан к периоду |
+| GET | `/api/v1/projects/{projectID}/monitors/{monitorID}/incidents` | История инцидентов за период | Владелец | Владелец и monitor проверяются до чтения; курсор привязан к периоду |
+| GET | `/api/v1/projects/{projectID}/monitors/{monitorID}/summary` | Uptime, coverage, response time и последний инцидент | Владелец | SQL одновременно фильтрует project, monitor и владельца; период до 31 дня |
 | POST | `/api/v1/heartbeat/{token}` | Сигнал бота/worker | Секретный токен | В БД только SHA-256; неизвестный токен тоже получает `204` |
 | GET/POST | `/api/v1/projects/{projectID}/webhooks` | Список и создание webhooks | Владелец | Владелец проекта, Origin для POST, URL по SSRF-политике, до 5 на проект |
 | DELETE | `/api/v1/projects/{projectID}/webhooks/{webhookID}` | Удаление webhook | Владелец | Проект, webhook и владелец; подтверждение удаления |

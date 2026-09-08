@@ -241,6 +241,20 @@ curl --fail -X POST http://localhost:8080/api/v1/heartbeat/HEARTBEAT_TOKEN
 
 Сигнал должен приходить чаще заданного интервала. Если он пропадёт, будет открыт инцидент; следующий сигнал закроет его.
 
+## Проверка TCP-monitor
+
+Цель задаётся строго как публичный `host:port`:
+
+```bash
+curl -i -b "$UPTIME_COOKIE_JAR" \
+  -H 'Content-Type: application/json' \
+  -H 'Origin: http://localhost:8080' \
+  -d '{"name":"PostgreSQL","monitor":{"type":"tcp","name":"Database port","target":"db.example.com:5432","check_interval_seconds":60,"timeout_seconds":5}}' \
+  http://localhost:8080/api/v1/projects
+```
+
+Для истории и сводки можно задать RFC 3339-период `from`/`to` до 31 дня. Следующая страница должна повторять точный период из ответа вместе с `next_cursor`.
+
 ## Проверка исходящих webhooks
 
 Подпишите проект на уведомления (замените `PROJECT_ID`):

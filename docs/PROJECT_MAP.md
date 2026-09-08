@@ -1,6 +1,6 @@
 # Карта проекта
 
-Дата актуализации: 2026-09-06
+Дата актуализации: 2026-09-08
 
 ## Текущее дерево
 
@@ -60,10 +60,12 @@ UptimeControl/
 │   │   │   ├── 000002_unique_active_site_url.up.sql
 │   │   │   ├── 000003_projects_and_monitors.up.sql
 │   │   │   ├── 000004_project_webhooks.up.sql
+│   │   │   ├── 000005_tcp_monitors.up.sql
 │   │   │   └── README.md
 │   │   └── migrations.go
 │   ├── monitoring/
 │   │   ├── checker.go
+│   │   ├── history.go
 │   │   ├── notify.go
 │   │   ├── postgres_store.go
 │   │   ├── scheduler.go
@@ -74,6 +76,9 @@ UptimeControl/
 │   │   ├── httpurl.go
 │   │   ├── transport.go
 │   │   └── transport_test.go
+│   ├── pagination/
+│   │   ├── cursor.go
+│   │   └── cursor_test.go
 │   ├── postgres/
 │   │   ├── postgres.go
 │   │   └── postgres_test.go
@@ -131,15 +136,19 @@ UptimeControl/
 
 ### `/internal/projects`
 
-Бизнес-правила и PostgreSQL-запросы проектов, их HTTP/heartbeat monitors и исходящих webhooks. Здесь находятся проверки владельца, мягкое удаление, одноразовая генерация heartbeat-токена и одноразовый webhook-секрет.
+Бизнес-правила и PostgreSQL-запросы проектов, их HTTP/TCP/heartbeat monitors и исходящих webhooks. Здесь находятся проверки владельца, cursor pagination, мягкое удаление, одноразовая генерация heartbeat-токена и одноразовый webhook-секрет.
 
 ### `/internal/monitoring`
 
-Планировщик заданий, безопасный HTTP checker, запись истории и инцидентов, приём heartbeat, Telegram-уведомления и диспетчер исходящих webhooks (`MultiNotifier` рассылает событие всем каналам, не ломая старые).
+Планировщик заданий, безопасные HTTP/TCP checkers, пагинированная история, расчёт uptime/coverage, запись инцидентов, приём heartbeat, Telegram-уведомления и диспетчер исходящих webhooks (`MultiNotifier` рассылает событие всем каналам, не ломая старые).
 
 ### `/internal/netpolicy`
 
-Общая нормализация публичных HTTP/HTTPS URL, запрет внутренних/private IP и безопасный HTTP-транспорт для защиты от SSRF и DNS rebinding. Используется и checker, и доставкой webhooks.
+Общая нормализация публичных HTTP/HTTPS URL и TCP-целей, запрет внутренних/private IP и безопасный HTTP-транспорт для защиты от SSRF и DNS rebinding. Используется checkers и доставкой webhooks.
+
+### `/internal/pagination`
+
+Кодирует и проверяет непрозрачные cursor pagination значения. Хеш области запроса связывает курсор с владельцем, ресурсом и фильтрами периода.
 
 ### `/internal/identity`
 
@@ -147,7 +156,7 @@ UptimeControl/
 
 ### `/internal/httpserver`
 
-Создаёт HTTP-сервер, встроенный Dashboard и маршруты health, auth, projects, monitors, history и heartbeat. Здесь также находятся Origin-проверка, лимит запросов и тесты.
+Создаёт HTTP-сервер, встроенный Dashboard и маршруты health, auth, projects, monitors, history, summary и heartbeat. Здесь также находятся Origin-проверка, лимит запросов и тесты.
 
 ### `/internal/postgres`
 
@@ -208,7 +217,7 @@ UptimeControl/
 | Конфигурация | `internal/config` | Адреса, PostgreSQL, origin, base path и cookie |
 | HTTP-сервер и Dashboard | `internal/httpserver` | UI, служебные, auth-, project- и heartbeat-маршруты |
 | Авторизация | `internal/auth` | Регистрация, вход, сессии и Argon2id |
-| Проекты | `internal/projects` | CRUD проектов и HTTP/heartbeat monitors |
+| Проекты | `internal/projects` | CRUD проектов и HTTP/TCP/heartbeat monitors, cursor pagination |
 | Мониторинг | `internal/monitoring` | Scheduler, HTTP checker, heartbeat, история, инциденты и Telegram |
 | Сетевая безопасность | `internal/netpolicy` | URL, DNS/IP и SSRF-политика |
 | Старый site API | `internal/sites` | Не регистрируется основной точкой запуска |
