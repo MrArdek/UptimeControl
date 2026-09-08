@@ -3,6 +3,7 @@ package projects
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/MrArdek/UptimeControl/internal/monitoring"
 )
@@ -10,10 +11,15 @@ import (
 type memoryStore struct {
 	createdProject Project
 	createdMonitor Monitor
+	listedProjects []Project
+	pageRequest    ProjectPageRequest
 	webhooks       []Webhook
 }
 
-func (store *memoryStore) List(context.Context, string) ([]Project, error) { return nil, nil }
+func (store *memoryStore) ListPage(_ context.Context, _ string, request ProjectPageRequest) ([]Project, error) {
+	store.pageRequest = request
+	return store.listedProjects, nil
+}
 func (store *memoryStore) ByID(context.Context, string, string) (Project, error) {
 	return Project{}, nil
 }
@@ -134,5 +140,24 @@ func TestCreateTCPProjectRejectsPrivateTarget(t *testing.T) {
 	})
 	if err != ErrInvalidTarget {
 		t.Fatalf("Create() error = %v, want ErrInvalidTarget", err)
+	}
+}
+
+func TestProjectPaginationCreatesScopedCursor(t *testing.T) {
+	createdAt := time.Date(2026, 9, 8, 12, 0, 0, 0, time.UTC)
+	store := &memoryStore{listedProjects: []Project{
+		{ID: "11111111-1111-4111-8111-111111111111", CreatedAt: createdAt},
+		{ID: "22222222-2222-4222-8222-222222222222", CreatedAt: createdAt.Add(-time.Minute)},
+	}}
+	service := NewService(store)
+	page, err := service.ListPage(context.Background(), "owner-id", 1, "")
+	if err != nil {
+		t.Fatalf("ListPage(): %v", err)
+	}
+	if len(page.Projects) != 1 || page.NextCursor == nil || store.pageRequest.Limit != 2 {
+		t.Fatalf("page = %#v, request = %#v", page, store.pageRequest)
+	}
+	if _, err := service.ListPage(context.Background(), "another-owner", 1, *page.NextCursor); err != ErrInvalidCursor {
+		t.Fatalf("cross-owner cursor error = %v, want ErrInvalidCursor", err)
 	}
 }

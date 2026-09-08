@@ -48,8 +48,12 @@
     .secret { border:1px solid #38694e; background:#102b20; padding:14px; border-radius:12px; margin:14px 0; overflow-wrap:anywhere; }
     .history { margin-top:12px; padding-top:12px; border-top:1px dashed var(--line); font-size:13px; }
     .history-item { display:flex; justify-content:space-between; gap:10px; padding:5px 0; color:var(--muted); }
+    .summary-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin:10px 0 14px; }
+    .summary-card { padding:9px; border-radius:9px; background:#0a101a; color:var(--muted); }
+    .summary-card strong { display:block; color:var(--text); font-size:15px; }
+    .more { width:100%; margin-top:14px; }
     .hidden { display:none !important; }
-    @media (max-width:800px) { .layout { grid-template-columns:1fr; } .row { grid-template-columns:1fr; gap:0; } header { align-items:flex-start; } }
+    @media (max-width:800px) { .layout { grid-template-columns:1fr; } .row { grid-template-columns:1fr; gap:0; } .summary-grid { grid-template-columns:1fr 1fr; } header { align-items:flex-start; } }
   </style>
 </head>
 <body data-base-path="__BASE_PATH__">
@@ -84,14 +88,15 @@
         <div id="project-message" class="message"></div>
         <label>Название<input name="name" maxlength="100" required placeholder="Telegram bot"></label>
         <label>Описание<textarea name="description" maxlength="2000" rows="2" placeholder="Необязательно"></textarea></label>
-        <label>Тип проверки<select name="type" id="monitor-type"><option value="http">HTTP / HTTPS</option><option value="heartbeat">Heartbeat для бота или worker</option></select></label>
+        <label>Тип проверки<select name="type" id="monitor-type"><option value="http">HTTP / HTTPS</option><option value="tcp">TCP-порт</option><option value="heartbeat">Heartbeat для бота или worker</option></select></label>
         <label>Название проверки<input name="monitor_name" maxlength="100" required value="Основная проверка"></label>
         <div id="url-field"><label>Публичный URL<input name="url" type="url" placeholder="https://example.com/health"></label></div>
+        <div id="target-field" class="hidden"><label>TCP-адрес и порт<input name="target" placeholder="example.com:5432"></label></div>
         <div class="row"><label>Интервал, секунд<input name="interval" type="number" min="30" max="86400" value="60" required></label><label id="timeout-field">Таймаут, секунд<input name="timeout" type="number" min="1" max="30" value="10" required></label></div>
         <button class="primary" type="submit">Создать проект</button>
         <div id="heartbeat-secret" class="secret hidden"></div>
       </form>
-      <div id="projects" class="projects"><div class="panel muted">Загрузка…</div></div>
+      <div><div id="projects" class="projects"><div class="panel muted">Загрузка…</div></div><button id="projects-more" class="ghost more hidden">Показать ещё</button></div>
     </div>
   </section>
 </main>
@@ -131,12 +136,16 @@ $('#login-form').addEventListener('submit', event => submitAuth(event,'login'));
 $('#register-form').addEventListener('submit', event => submitAuth(event,'register'));
 $('#logout').addEventListener('click', async () => { try { await request('/auth/logout',{method:'POST'}); } catch {} showAuth(); });
 $('#refresh').addEventListener('click', loadProjects);
+$('#projects-more').addEventListener('click', () => loadProjects(false));
 
 $('#monitor-type').addEventListener('change', event => {
   const heartbeat = event.target.value==='heartbeat';
-  $('#url-field').classList.toggle('hidden', heartbeat);
+  const tcp = event.target.value==='tcp';
+  $('#url-field').classList.toggle('hidden', heartbeat||tcp);
+  $('#target-field').classList.toggle('hidden', !tcp);
   $('#timeout-field').classList.toggle('hidden', heartbeat);
-  $('#url-field input').required=!heartbeat;
+  $('#url-field input').required=!heartbeat&&!tcp;
+  $('#target-field input').required=tcp;
 });
 
 $('#create-project').addEventListener('submit', async event => {
@@ -144,6 +153,7 @@ $('#create-project').addEventListener('submit', async event => {
   const form = new FormData(event.target); const type=form.get('type');
   const payload={name:form.get('name'),description:form.get('description'),monitor:{type,name:form.get('monitor_name'),check_interval_seconds:Number(form.get('interval'))}};
   if(type==='http'){payload.monitor.url=form.get('url');payload.monitor.timeout_seconds=Number(form.get('timeout'));}
+  if(type==='tcp'){payload.monitor.target=form.get('target');payload.monitor.timeout_seconds=Number(form.get('timeout'));}
   try {
     const result=await request('/projects',{method:'POST',headers:originHeader,body:JSON.stringify(payload)});
     const monitor=result.project.monitors[0];
@@ -154,15 +164,23 @@ $('#create-project').addEventListener('submit', async event => {
 
 function monitorStatus(monitor){if(monitor.last_available===true)return ['up','Работает'];if(monitor.last_available===false)return ['down','Недоступен'];return ['pending','Ожидает проверки'];}
 function formatTime(value){return value?new Date(value).toLocaleString():'ещё не проверялся';}
-async function loadProjects(){
+function formatPercent(value){return value===null?'—':`${Number(value).toFixed(2)}%`;}
+function formatDuration(seconds){if(seconds===null||seconds===undefined)return '—';const hours=Math.floor(seconds/3600);const minutes=Math.floor((seconds%3600)/60);return hours?`${hours} ч ${minutes} мин`:`${minutes} мин`;}
+let loadedProjects=[];
+let projectsCursor=null;
+async function loadProjects(reset=true){
   try {
-    const result=await request('/projects');
-    if(!result.projects.length){$('#projects').innerHTML='<div class="panel muted">Пока нет проектов. Создайте первый слева.</div>';return;}
-    $('#projects').innerHTML=result.projects.map(project=>`<article class="project"><div class="project-head"><div><h3>${escapeHTML(project.name)}</h3><div class="muted">${escapeHTML(project.description)}</div></div><button class="danger" onclick="deleteProject('${project.id}')">Удалить</button></div>${project.monitors.map(monitor=>{const status=monitorStatus(monitor);return `<div class="monitor"><div><h3>${escapeHTML(monitor.name)}</h3><div class="monitor-meta">${monitor.type==='heartbeat'?'Heartbeat':escapeHTML(monitor.url)} · каждые ${monitor.check_interval_seconds} сек.<br>Последняя проверка: ${formatTime(monitor.last_checked_at)}${monitor.last_response_time_ms!==null?` · ${monitor.last_response_time_ms} мс`:''}</div><div class="actions"><button class="ghost" onclick="loadHistory('${project.id}','${monitor.id}',this)">История</button></div><div class="history hidden"></div></div><span class="status ${status[0]}">${status[1]}</span></div>`}).join('')}</article>`).join('');
+    if(reset){loadedProjects=[];projectsCursor=null;$('#projects').innerHTML='<div class="panel muted">Загрузка…</div>';}
+    const suffix=projectsCursor?`&cursor=${encodeURIComponent(projectsCursor)}`:'';
+    const result=await request(`/projects?limit=50${suffix}`);
+    loadedProjects=loadedProjects.concat(result.projects);projectsCursor=result.next_cursor;
+    $('#projects-more').classList.toggle('hidden',!projectsCursor);
+    if(!loadedProjects.length){$('#projects').innerHTML='<div class="panel muted">Пока нет проектов. Создайте первый слева.</div>';return;}
+    $('#projects').innerHTML=loadedProjects.map(project=>`<article class="project"><div class="project-head"><div><h3>${escapeHTML(project.name)}</h3><div class="muted">${escapeHTML(project.description)}</div></div><button class="danger" onclick="deleteProject('${project.id}')">Удалить</button></div>${project.monitors.map(monitor=>{const status=monitorStatus(monitor);const address=monitor.type==='heartbeat'?'Heartbeat':monitor.type==='tcp'?`TCP ${escapeHTML(monitor.target)}`:escapeHTML(monitor.url);return `<div class="monitor"><div><h3>${escapeHTML(monitor.name)}</h3><div class="monitor-meta">${address} · каждые ${monitor.check_interval_seconds} сек.<br>Последняя проверка: ${formatTime(monitor.last_checked_at)}${monitor.last_response_time_ms!==null?` · ${monitor.last_response_time_ms} мс`:''}</div><div class="actions"><button class="ghost" onclick="loadHistory('${project.id}','${monitor.id}',this)">История и сводка</button></div><div class="history hidden"></div></div><span class="status ${status[0]}">${status[1]}</span></div>`}).join('')}</article>`).join('');
   } catch(error){if(error.message.includes('authentication'))showAuth();else $('#projects').innerHTML=`<div class="panel">${escapeHTML(error.message)}</div>`;}
 }
 async function deleteProject(id){if(!confirm('Удалить проект и отключить его проверки?'))return;try{await request(`/projects/${id}`,{method:'DELETE',headers:{'X-Confirm-Delete':'true'}});loadProjects();}catch(error){alert(error.message);}}
-async function loadHistory(projectID,monitorID,button){const box=button.closest('.monitor').querySelector('.history');box.classList.remove('hidden');box.textContent='Загрузка…';try{const [checks,incidents]=await Promise.all([request(`/projects/${projectID}/monitors/${monitorID}/checks?limit=10`),request(`/projects/${projectID}/monitors/${monitorID}/incidents?limit=5`)]);box.innerHTML=`<strong>Последние проверки</strong>${checks.checks.map(item=>`<div class="history-item"><span>${item.available?'✅':'❌'} ${formatTime(item.checked_at)}</span><span>${item.status_code??item.error??'—'}</span></div>`).join('')||'<div class="muted">Нет данных</div>'}<br><strong>Инциденты: ${incidents.incidents.length}</strong>`;}catch(error){box.textContent=error.message;}}
+async function loadHistory(projectID,monitorID,button){const box=button.closest('.monitor').querySelector('.history');box.classList.remove('hidden');box.textContent='Загрузка…';const to=new Date();const from=new Date(to.getTime()-24*60*60*1000);const period=`from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`;try{const [summaryResult,checks,incidents]=await Promise.all([request(`/projects/${projectID}/monitors/${monitorID}/summary?${period}`),request(`/projects/${projectID}/monitors/${monitorID}/checks?limit=10&${period}`),request(`/projects/${projectID}/monitors/${monitorID}/incidents?limit=5&${period}`)]);const summary=summaryResult.summary;const lastIncident=summary.last_incident;box.innerHTML=`<strong>Сводка за 24 часа</strong><div class="summary-grid"><div class="summary-card">Uptime<strong>${formatPercent(summary.uptime_percent)}</strong></div><div class="summary-card">Покрытие<strong>${formatPercent(summary.coverage_percent)}</strong></div><div class="summary-card">Среднее<strong>${summary.average_response_time_ms===null?'—':`${Math.round(summary.average_response_time_ms)} мс`}</strong></div><div class="summary-card">Пик<strong>${summary.peak_response_time_ms===null?'—':`${summary.peak_response_time_ms} мс`}</strong></div></div><strong>Последние проверки</strong>${checks.checks.map(item=>`<div class="history-item"><span>${item.available?'✅':'❌'} ${formatTime(item.checked_at)}</span><span>${item.status_code??item.error_message??'—'}${item.response_time_ms===null?'':` · ${item.response_time_ms} мс`}</span></div>`).join('')||'<div class="muted">Нет данных</div>'}<br><strong>Последний инцидент</strong>${lastIncident?`<div class="history-item"><span>${formatTime(lastIncident.started_at)}</span><span>${formatDuration(lastIncident.duration_seconds)}</span></div>`:'<div class="muted">Нет инцидентов</div>'}<div class="muted">Показано инцидентов за период: ${incidents.incidents.length}${checks.next_cursor||incidents.next_cursor?' · есть более ранние записи':''}</div>`;}catch(error){box.textContent=error.message;}}
 
 (async()=>{try{const result=await request('/auth/me');showApp(result.user);}catch{showAuth();}})();
 </script>

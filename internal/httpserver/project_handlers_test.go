@@ -23,8 +23,8 @@ type configurableProjectService struct {
 	deletedHookID  string
 }
 
-func (service *configurableProjectService) List(context.Context, string) ([]projects.Project, error) {
-	return nil, nil
+func (service *configurableProjectService) ListPage(context.Context, string, int, string) (projects.ProjectPage, error) {
+	return projects.ProjectPage{}, nil
 }
 func (service *configurableProjectService) ByID(context.Context, string, string) (projects.Project, error) {
 	return projects.Project{}, nil
@@ -71,11 +71,14 @@ func (service *configurableProjectService) DeleteWebhook(_ context.Context, _, _
 
 type stubHistoryService struct{}
 
-func (stubHistoryService) Checks(context.Context, string, string, string, int) ([]monitoring.Check, error) {
-	return []monitoring.Check{}, nil
+func (stubHistoryService) CheckPage(context.Context, string, string, string, monitoring.HistoryQuery) (monitoring.CheckPage, error) {
+	return monitoring.CheckPage{Checks: []monitoring.Check{}}, nil
 }
-func (stubHistoryService) Incidents(context.Context, string, string, string, int) ([]monitoring.Incident, error) {
-	return []monitoring.Incident{}, nil
+func (stubHistoryService) IncidentPage(context.Context, string, string, string, monitoring.HistoryQuery) (monitoring.IncidentPage, error) {
+	return monitoring.IncidentPage{Incidents: []monitoring.Incident{}}, nil
+}
+func (stubHistoryService) Summary(context.Context, string, string, string, monitoring.HistoryQuery) (monitoring.MonitorSummary, error) {
+	return monitoring.MonitorSummary{}, nil
 }
 
 func authenticatedProjectHandlers(service *configurableProjectService) *projectHandlers {

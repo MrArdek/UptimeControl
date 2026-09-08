@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/MrArdek/UptimeControl/internal/auth"
 	"github.com/MrArdek/UptimeControl/internal/monitoring"
@@ -15,7 +16,7 @@ import (
 const maximumProjectBody = 32 * 1024
 
 type projectService interface {
-	List(context.Context, string) ([]projects.Project, error)
+	ListPage(context.Context, string, int, string) (projects.ProjectPage, error)
 	ByID(context.Context, string, string) (projects.Project, error)
 	Create(context.Context, string, projects.CreateProjectInput) (projects.Project, error)
 	Update(context.Context, string, string, projects.UpdateProjectInput) (projects.Project, error)
@@ -29,8 +30,9 @@ type projectService interface {
 }
 
 type historyService interface {
-	Checks(context.Context, string, string, string, int) ([]monitoring.Check, error)
-	Incidents(context.Context, string, string, string, int) ([]monitoring.Incident, error)
+	CheckPage(context.Context, string, string, string, monitoring.HistoryQuery) (monitoring.CheckPage, error)
+	IncidentPage(context.Context, string, string, string, monitoring.HistoryQuery) (monitoring.IncidentPage, error)
+	Summary(context.Context, string, string, string, monitoring.HistoryQuery) (monitoring.MonitorSummary, error)
 }
 
 type projectHandlers struct {
@@ -73,10 +75,6 @@ type projectResponse struct {
 	Project projects.Project `json:"project"`
 }
 
-type projectListResponse struct {
-	Projects []projects.Project `json:"projects"`
-}
-
 type monitorResponse struct {
 	Monitor projects.Monitor `json:"monitor"`
 }
@@ -92,14 +90,6 @@ type webhookResponse struct {
 
 type webhookListResponse struct {
 	Webhooks []projects.Webhook `json:"webhooks"`
-}
-
-type checkListResponse struct {
-	Checks []monitoring.Check `json:"checks"`
-}
-
-type incidentListResponse struct {
-	Incidents []monitoring.Incident `json:"incidents"`
 }
 
 func newProjectHandlers(
@@ -147,6 +137,8 @@ func (handlers *projectHandlers) item(response http.ResponseWriter, request *htt
 		handlers.checks(response, request, projectID, parts[2])
 	case len(parts) == 4 && parts[1] == "monitors" && parts[3] == "incidents":
 		handlers.incidents(response, request, projectID, parts[2])
+	case len(parts) == 4 && parts[1] == "monitors" && parts[3] == "summary":
+		handlers.summary(response, request, projectID, parts[2])
 	case len(parts) == 2 && parts[1] == "webhooks":
 		handlers.webhookCollection(response, request, projectID)
 	case len(parts) == 3 && parts[1] == "webhooks":
@@ -161,12 +153,16 @@ func (handlers *projectHandlers) list(response http.ResponseWriter, request *htt
 	if !ok {
 		return
 	}
-	projectList, err := handlers.projects.List(request.Context(), user.ID)
+	projectPage, err := handlers.projects.ListPage(request.Context(), user.ID, queryLimit(request), request.URL.Query().Get("cursor"))
+	if errors.Is(err, projects.ErrInvalidCursor) {
+		writeError(response, http.StatusBadRequest, "invalid_cursor", "cursor is invalid for this project list")
+		return
+	}
 	if err != nil {
 		writeError(response, http.StatusInternalServerError, "internal_error", "request could not be completed")
 		return
 	}
-	writeJSON(response, http.StatusOK, projectListResponse{Projects: projectList})
+	writeJSON(response, http.StatusOK, projectPage)
 }
 
 func (handlers *projectHandlers) create(response http.ResponseWriter, request *http.Request) {
@@ -395,16 +391,29 @@ func (handlers *projectHandlers) checks(response http.ResponseWriter, request *h
 	if !ok {
 		return
 	}
-	if _, err := handlers.projects.ByID(request.Context(), user.ID, projectID); err != nil {
+	project, err := handlers.projects.ByID(request.Context(), user.ID, projectID)
+	if err != nil {
 		handlers.writeProjectError(response, err)
 		return
 	}
-	checks, err := handlers.history.Checks(request.Context(), user.ID, projectID, monitorID, queryLimit(request))
+	if !projectHasMonitor(project, monitorID) {
+		writeError(response, http.StatusNotFound, "monitor_not_found", "monitor was not found")
+		return
+	}
+	query, ok := handlers.historyQuery(response, request)
+	if !ok {
+		return
+	}
+	checks, err := handlers.history.CheckPage(request.Context(), user.ID, projectID, monitorID, query)
+	if errors.Is(err, monitoring.ErrInvalidCursor) {
+		writeError(response, http.StatusBadRequest, "invalid_cursor", "cursor is invalid for this check history")
+		return
+	}
 	if err != nil {
 		writeError(response, http.StatusInternalServerError, "internal_error", "request could not be completed")
 		return
 	}
-	writeJSON(response, http.StatusOK, checkListResponse{Checks: checks})
+	writeJSON(response, http.StatusOK, checks)
 }
 
 func (handlers *projectHandlers) incidents(response http.ResponseWriter, request *http.Request, projectID, monitorID string) {
@@ -416,16 +425,84 @@ func (handlers *projectHandlers) incidents(response http.ResponseWriter, request
 	if !ok {
 		return
 	}
-	if _, err := handlers.projects.ByID(request.Context(), user.ID, projectID); err != nil {
+	project, err := handlers.projects.ByID(request.Context(), user.ID, projectID)
+	if err != nil {
 		handlers.writeProjectError(response, err)
 		return
 	}
-	incidents, err := handlers.history.Incidents(request.Context(), user.ID, projectID, monitorID, queryLimit(request))
+	if !projectHasMonitor(project, monitorID) {
+		writeError(response, http.StatusNotFound, "monitor_not_found", "monitor was not found")
+		return
+	}
+	query, ok := handlers.historyQuery(response, request)
+	if !ok {
+		return
+	}
+	incidents, err := handlers.history.IncidentPage(request.Context(), user.ID, projectID, monitorID, query)
+	if errors.Is(err, monitoring.ErrInvalidCursor) {
+		writeError(response, http.StatusBadRequest, "invalid_cursor", "cursor is invalid for this incident history")
+		return
+	}
 	if err != nil {
 		writeError(response, http.StatusInternalServerError, "internal_error", "request could not be completed")
 		return
 	}
-	writeJSON(response, http.StatusOK, incidentListResponse{Incidents: incidents})
+	writeJSON(response, http.StatusOK, incidents)
+}
+
+func (handlers *projectHandlers) summary(response http.ResponseWriter, request *http.Request, projectID, monitorID string) {
+	if request.Method != http.MethodGet {
+		methodNotAllowed(response, http.MethodGet)
+		return
+	}
+	user, ok := handlers.authorize(response, request)
+	if !ok {
+		return
+	}
+	query, ok := handlers.historyQuery(response, request)
+	if !ok {
+		return
+	}
+	summary, err := handlers.history.Summary(request.Context(), user.ID, projectID, monitorID, query)
+	if errors.Is(err, monitoring.ErrNotFound) {
+		writeError(response, http.StatusNotFound, "monitor_not_found", "monitor was not found")
+		return
+	}
+	if err != nil {
+		writeError(response, http.StatusInternalServerError, "internal_error", "request could not be completed")
+		return
+	}
+	writeJSON(response, http.StatusOK, struct {
+		Summary monitoring.MonitorSummary `json:"summary"`
+	}{Summary: summary})
+}
+
+func (handlers *projectHandlers) historyQuery(response http.ResponseWriter, request *http.Request) (monitoring.HistoryQuery, bool) {
+	query, err := monitoring.NewHistoryQuery(
+		queryLimit(request),
+		request.URL.Query().Get("cursor"),
+		request.URL.Query().Get("from"),
+		request.URL.Query().Get("to"),
+		time.Now().UTC(),
+	)
+	if errors.Is(err, monitoring.ErrInvalidPeriod) {
+		writeError(response, http.StatusBadRequest, "invalid_period", "from and to must define a valid period of at most 31 days")
+		return monitoring.HistoryQuery{}, false
+	}
+	if err != nil {
+		writeError(response, http.StatusBadRequest, "invalid_request", "history query is invalid")
+		return monitoring.HistoryQuery{}, false
+	}
+	return query, true
+}
+
+func projectHasMonitor(project projects.Project, monitorID string) bool {
+	for _, monitor := range project.Monitors {
+		if monitor.ID == monitorID {
+			return true
+		}
+	}
+	return false
 }
 
 func (handlers *projectHandlers) authorize(response http.ResponseWriter, request *http.Request) (auth.User, bool) {

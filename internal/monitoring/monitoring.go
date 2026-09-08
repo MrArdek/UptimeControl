@@ -37,10 +37,11 @@ type Check struct {
 }
 
 type Incident struct {
-	ID         string     `json:"id"`
-	StartedAt  time.Time  `json:"started_at"`
-	ResolvedAt *time.Time `json:"resolved_at"`
-	Cause      *string    `json:"cause"`
+	ID              string     `json:"id"`
+	StartedAt       time.Time  `json:"started_at"`
+	ResolvedAt      *time.Time `json:"resolved_at"`
+	DurationSeconds int64      `json:"duration_seconds"`
+	Cause           *string    `json:"cause"`
 }
 
 type Transition struct {
@@ -63,8 +64,6 @@ type Store interface {
 	ClaimDue(context.Context, time.Time, int) ([]DueMonitor, error)
 	RecordResult(context.Context, DueMonitor, Result) (Transition, error)
 	RecordHeartbeat(context.Context, []byte, time.Time) (Transition, error)
-	Checks(context.Context, string, string, string, int) ([]Check, error)
-	Incidents(context.Context, string, string, string, int) ([]Incident, error)
 }
 
 type Checker interface {

@@ -14,7 +14,6 @@ import (
 )
 
 const (
-	maximumListedProjects      = 100
 	uniqueViolationCode        = "23505"
 	uniqueMonitorURLConstraint = "monitors_project_url_unique_active"
 	uniqueMonitorTCPConstraint = "monitors_project_tcp_target_unique_active"
@@ -28,14 +27,19 @@ func NewPostgresStore(database *pgxpool.Pool) *PostgresStore {
 	return &PostgresStore{database: database}
 }
 
-func (store *PostgresStore) List(ctx context.Context, userID string) ([]Project, error) {
-	rows, err := store.database.Query(ctx, `
+func (store *PostgresStore) ListPage(ctx context.Context, userID string, request ProjectPageRequest) ([]Project, error) {
+	query := `
 		SELECT id, name, description, created_at, updated_at
 		FROM projects
-		WHERE user_id = $1 AND deleted_at IS NULL
-		ORDER BY created_at DESC, id DESC
-		LIMIT $2
-	`, userID, maximumListedProjects)
+		WHERE user_id = $1 AND deleted_at IS NULL`
+	arguments := []any{userID}
+	if request.BeforeTime != nil {
+		query += ` AND (created_at, id) < ($2, $3::uuid)`
+		arguments = append(arguments, *request.BeforeTime, request.BeforeID)
+	}
+	query += ` ORDER BY created_at DESC, id DESC LIMIT $` + fmt.Sprint(len(arguments)+1)
+	arguments = append(arguments, request.Limit)
+	rows, err := store.database.Query(ctx, query, arguments...)
 	if err != nil {
 		return nil, fmt.Errorf("list projects: %w", err)
 	}

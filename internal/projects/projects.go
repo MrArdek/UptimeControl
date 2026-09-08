@@ -13,6 +13,7 @@ import (
 
 	"github.com/MrArdek/UptimeControl/internal/identity"
 	"github.com/MrArdek/UptimeControl/internal/netpolicy"
+	"github.com/MrArdek/UptimeControl/internal/pagination"
 )
 
 const (
@@ -37,6 +38,7 @@ var (
 	ErrEmptyUpdate        = errors.New("update has no fields")
 	ErrNotFound           = errors.New("project or monitor not found")
 	ErrAlreadyExists      = errors.New("monitor already exists")
+	ErrInvalidCursor      = errors.New("invalid cursor")
 )
 
 type Project struct {
@@ -46,6 +48,17 @@ type Project struct {
 	Monitors    []Monitor `json:"monitors"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type ProjectPage struct {
+	Projects   []Project `json:"projects"`
+	NextCursor *string   `json:"next_cursor"`
+}
+
+type ProjectPageRequest struct {
+	Limit      int
+	BeforeTime *time.Time
+	BeforeID   string
 }
 
 type Monitor struct {
@@ -99,7 +112,7 @@ type UpdateMonitorInput struct {
 }
 
 type Store interface {
-	List(context.Context, string) ([]Project, error)
+	ListPage(context.Context, string, ProjectPageRequest) ([]Project, error)
 	ByID(context.Context, string, string) (Project, error)
 	Create(context.Context, string, Project, Monitor) error
 	UpdateProject(context.Context, string, string, UpdateProjectInput) (Project, error)
@@ -121,8 +134,33 @@ func NewService(store Store) *Service {
 	return &Service{store: store, now: time.Now}
 }
 
-func (service *Service) List(ctx context.Context, userID string) ([]Project, error) {
-	return service.store.List(ctx, userID)
+func (service *Service) ListPage(ctx context.Context, userID string, limit int, cursor string) (ProjectPage, error) {
+	limit = normalizePageLimit(limit)
+	request := ProjectPageRequest{Limit: limit + 1}
+	if cursor != "" {
+		beforeTime, beforeID, err := pagination.Decode(cursor, "projects:"+userID)
+		if err != nil || !identity.ValidUUID(beforeID) {
+			return ProjectPage{}, ErrInvalidCursor
+		}
+		request.BeforeTime = &beforeTime
+		request.BeforeID = beforeID
+	}
+	projectList, err := service.store.ListPage(ctx, userID, request)
+	if err != nil {
+		return ProjectPage{}, err
+	}
+	page := ProjectPage{Projects: projectList, NextCursor: nil}
+	if len(projectList) <= limit {
+		return page, nil
+	}
+	page.Projects = projectList[:limit]
+	last := page.Projects[len(page.Projects)-1]
+	next, err := pagination.Encode(last.CreatedAt, last.ID, "projects:"+userID)
+	if err != nil {
+		return ProjectPage{}, fmt.Errorf("encode project cursor: %w", err)
+	}
+	page.NextCursor = &next
+	return page, nil
 }
 
 func (service *Service) ByID(ctx context.Context, userID, projectID string) (Project, error) {
@@ -407,4 +445,14 @@ func validInterval(value int) bool {
 
 func validTimeout(value int) bool {
 	return value >= minimumTimeout && value <= maximumTimeout
+}
+
+func normalizePageLimit(limit int) int {
+	if limit < 1 {
+		return 100
+	}
+	if limit > 500 {
+		return 500
+	}
+	return limit
 }
