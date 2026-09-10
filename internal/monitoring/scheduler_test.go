@@ -42,7 +42,7 @@ func (schedulerChecker) Check(context.Context, DueMonitor) Result {
 
 func TestSchedulerMarksOverdueHeartbeatUnavailable(t *testing.T) {
 	store := &schedulerStore{due: []DueMonitor{{ID: "monitor-id", Type: "heartbeat"}}}
-	scheduler := NewScheduler(store, schedulerChecker{}, nil, slog.Default())
+	scheduler := NewScheduler(store, schedulerChecker{}, slog.Default())
 	scheduler.runBatch(context.Background())
 	if store.recordedMonitor.ID != "monitor-id" || store.recordedResult.Available {
 		t.Fatalf("overdue heartbeat result = %#v", store.recordedResult)
@@ -54,7 +54,7 @@ func TestSchedulerMarksOverdueHeartbeatUnavailable(t *testing.T) {
 
 func TestRecordHeartbeatHashesToken(t *testing.T) {
 	store := &schedulerStore{}
-	scheduler := NewScheduler(store, schedulerChecker{}, nil, slog.Default())
+	scheduler := NewScheduler(store, schedulerChecker{}, slog.Default())
 	if err := scheduler.RecordHeartbeat(context.Background(), "raw-secret-token"); err != nil {
 		t.Fatalf("RecordHeartbeat() returned an error: %v", err)
 	}

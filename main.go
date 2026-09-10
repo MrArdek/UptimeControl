@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -68,12 +69,17 @@ func run() error {
 	if len(notifiers) > 0 {
 		notifier = monitoring.NewMultiNotifier(notifiers...)
 	}
-	scheduler := monitoring.NewScheduler(monitorStore, monitoring.NewHTTPChecker(), notifier, logger)
+	scheduler := monitoring.NewScheduler(monitorStore, monitoring.NewHTTPChecker(), logger)
+	notificationWorker := monitoring.NewNotificationWorker(monitorStore, notifier, logger)
 	runtimeContext, cancelRuntime := context.WithCancel(context.Background())
 	monitoringDone := make(chan struct{})
 	go func() {
 		defer close(monitoringDone)
-		scheduler.Run(runtimeContext)
+		var runtimeWorkers sync.WaitGroup
+		runtimeWorkers.Add(2)
+		go func() { defer runtimeWorkers.Done(); scheduler.Run(runtimeContext) }()
+		go func() { defer runtimeWorkers.Done(); notificationWorker.Run(runtimeContext) }()
+		runtimeWorkers.Wait()
 	}()
 	defer func() {
 		cancelRuntime()

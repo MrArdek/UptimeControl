@@ -52,6 +52,9 @@ func transitionMessage(transition Transition) string {
 	if transition.Kind == "recovered" {
 		icon = "🟢"
 		title = "Восстановлен"
+	} else if transition.Kind == "test" {
+		icon = "🔵"
+		title = "Тест уведомлений"
 	}
 	lines := []string{
 		icon + " Uptime Control: " + title,
@@ -67,5 +70,8 @@ func transitionMessage(transition Transition) string {
 		lines = append(lines, "Причина: "+transition.Cause)
 	}
 	lines = append(lines, "Время UTC: "+transition.OccurredAt.UTC().Format(time.RFC3339))
+	if transition.EventID != "" {
+		lines = append(lines, "Event ID: "+transition.EventID)
+	}
 	return strings.Join(lines, "\n")
 }

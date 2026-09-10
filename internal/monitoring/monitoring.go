@@ -45,6 +45,7 @@ type Incident struct {
 }
 
 type Transition struct {
+	EventID     string
 	Kind        string
 	ProjectID   string
 	ProjectName string

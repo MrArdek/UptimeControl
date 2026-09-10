@@ -20,7 +20,6 @@ import (
 const (
 	webhookRequestTimeout = 10 * time.Second
 	webhookMaxRedirects   = 3
-	webhookMaxAttempts    = 3
 	webhookMaxBodyBytes   = 1 << 20
 )
 
@@ -46,6 +45,7 @@ type DeliveryRecorder interface {
 }
 
 type webhookPayload struct {
+	EventID     string `json:"event_id"`
 	Event       string `json:"event"`
 	ProjectID   string `json:"project_id"`
 	ProjectName string `json:"project_name"`
@@ -109,7 +109,7 @@ func (dispatcher *WebhookDispatcher) Notify(ctx context.Context, transition Tran
 
 	var lastError error
 	for _, endpoint := range endpoints {
-		if !webhookWantsEvent(endpoint.Events, transition.Kind) {
+		if transition.Kind != "test" && !webhookWantsEvent(endpoint.Events, transition.Kind) {
 			continue
 		}
 		if err := dispatcher.deliver(ctx, endpoint, transition); err != nil {
@@ -132,6 +132,7 @@ func webhookWantsEvent(events, kind string) bool {
 
 func (dispatcher *WebhookDispatcher) deliver(ctx context.Context, endpoint WebhookEndpoint, transition Transition) error {
 	body, err := json.Marshal(webhookPayload{
+		EventID:     transition.EventID,
 		Event:       transition.Kind,
 		ProjectID:   transition.ProjectID,
 		ProjectName: transition.ProjectName,
@@ -146,31 +147,18 @@ func (dispatcher *WebhookDispatcher) deliver(ctx context.Context, endpoint Webho
 		return fmt.Errorf("encode webhook payload")
 	}
 
+	status, sendErr := dispatcher.send(ctx, endpoint, transition.Kind, body)
 	var statusCode *int
 	var lastError *string
-	attempts := 0
-	backoffs := []time.Duration{0, time.Second, 4 * time.Second}
-	for attempt := 0; attempt < webhookMaxAttempts; attempt++ {
-		if backoffs[attempt] > 0 {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(backoffs[attempt]):
-			}
-		}
-		attempts = attempt + 1
-		status, sendErr := dispatcher.send(ctx, endpoint, transition.Kind, body)
-		if sendErr == nil {
-			statusCode = &status
-			lastError = nil
-			break
-		}
+	if sendErr == nil {
+		statusCode = &status
+	} else {
 		message := sendErr.Error()
 		lastError = &message
 	}
 
 	if dispatcher.recorder != nil {
-		if err := dispatcher.recorder.RecordDelivery(ctx, endpoint.ID, transition.Kind, statusCode, attempts, lastError); err != nil && ctx.Err() == nil {
+		if err := dispatcher.recorder.RecordDelivery(ctx, endpoint.ID, transition.Kind, statusCode, 1, lastError); err != nil && ctx.Err() == nil {
 			dispatcher.logger.Error("record webhook delivery", "webhook_id", endpoint.ID, "error", err)
 		}
 	}
@@ -225,9 +213,22 @@ func newWebhookRequest(
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("User-Agent", "UptimeControl/1.0")
 	request.Header.Set("X-UptimeControl-Event", event)
+	if eventID := webhookEventID(body); eventID != "" {
+		request.Header.Set("X-UptimeControl-Event-ID", eventID)
+	}
 	request.Header.Set("X-UptimeControl-Signature", "sha256="+webhookSignature(endpoint.Secret, body))
 
 	return request, nil
+}
+
+func webhookEventID(body []byte) string {
+	var payload struct {
+		EventID string `json:"event_id"`
+	}
+	if json.Unmarshal(body, &payload) != nil {
+		return ""
+	}
+	return payload.EventID
 }
 
 func webhookSignature(secret, body []byte) string {

@@ -49,6 +49,7 @@ func (recorder *webhookTestRecorder) RecordDelivery(
 
 func webhookTestTransition() Transition {
 	return Transition{
+		EventID:     "11111111-1111-4111-8111-111111111111",
 		Kind:        "down",
 		ProjectID:   "project-id",
 		ProjectName: "Public API",
@@ -88,6 +89,9 @@ func TestWebhookDispatcherDeliversSignedPayload(t *testing.T) {
 		if request.Header.Get("X-UptimeControl-Event") != "down" {
 			return 0, errWebhookTest
 		}
+		if request.Header.Get("X-UptimeControl-Event-ID") != "11111111-1111-4111-8111-111111111111" {
+			return 0, errWebhookTest
+		}
 
 		return http.StatusOK, nil
 	}
@@ -99,7 +103,7 @@ func TestWebhookDispatcherDeliversSignedPayload(t *testing.T) {
 	if err := json.Unmarshal(receivedBody, &payload); err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
-	if payload["event"] != "down" || payload["project_id"] != "project-id" || payload["monitor_id"] != "monitor-id" {
+	if payload["event_id"] == "" || payload["event"] != "down" || payload["project_id"] != "project-id" || payload["monitor_id"] != "monitor-id" {
 		t.Fatalf("unexpected payload: %s", receivedBody)
 	}
 	if receivedEvent != "down" || receivedStatus != http.StatusOK {
@@ -160,7 +164,7 @@ func TestWebhookDispatcherSkipsUnsubscribedEvents(t *testing.T) {
 	}
 }
 
-func TestWebhookDispatcherRetriesAndRecordsFailure(t *testing.T) {
+func TestWebhookDispatcherRecordsQueueAttemptFailure(t *testing.T) {
 	recorder := &webhookTestRecorder{}
 	dispatcher := NewWebhookDispatcher(
 		webhookTestLoader{endpoints: []WebhookEndpoint{{
@@ -179,7 +183,7 @@ func TestWebhookDispatcherRetriesAndRecordsFailure(t *testing.T) {
 	if err := dispatcher.Notify(context.Background(), webhookTestTransition()); err == nil {
 		t.Fatal("Notify() succeeded against a failing endpoint")
 	}
-	if recorder.attempts != webhookMaxAttempts || recorder.lastError == nil {
+	if recorder.attempts != 1 || recorder.lastError == nil {
 		t.Fatalf("failure was not recorded: %#v", recorder)
 	}
 }

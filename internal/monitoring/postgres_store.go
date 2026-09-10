@@ -639,6 +639,9 @@ func recordResult(
 				transition.Cause = *result.Error
 			}
 		}
+		if err := enqueueTransition(ctx, executor, &transition); err != nil {
+			return Transition{}, err
+		}
 		return transition, nil
 	}
 
@@ -652,6 +655,9 @@ func recordResult(
 	}
 	if commandTag.RowsAffected() > 0 {
 		transition.Kind = "recovered"
+	}
+	if err := enqueueTransition(ctx, executor, &transition); err != nil {
+		return Transition{}, err
 	}
 	return transition, nil
 }
