@@ -66,3 +66,23 @@ func TestWebhookWantsEvent(t *testing.T) {
 		t.Fatal("WebhookWantsEvent() filters events incorrectly")
 	}
 }
+
+func TestUpdateWebhookNormalizesSubscription(t *testing.T) {
+	store := &memoryStore{}
+	service := NewService(store)
+	enabled := true
+	events := "recovered, down, recovered"
+	hook, err := service.UpdateWebhook(
+		context.Background(),
+		"owner-id",
+		"11111111-1111-4111-8111-111111111111",
+		"22222222-2222-4222-8222-222222222222",
+		UpdateWebhookInput{Events: &events, Enabled: &enabled},
+	)
+	if err != nil {
+		t.Fatalf("UpdateWebhook(): %v", err)
+	}
+	if hook.Events != "down,recovered" || !hook.Enabled || store.webhookUpdate.Events == nil || *store.webhookUpdate.Events != "down,recovered" {
+		t.Fatalf("updated webhook = %#v, input = %#v", hook, store.webhookUpdate)
+	}
+}

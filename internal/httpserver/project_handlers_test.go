@@ -95,6 +95,9 @@ func (service *configurableProjectService) CreateWebhook(
 
 	return service.createdWebhook, nil
 }
+func (service *configurableProjectService) UpdateWebhook(context.Context, string, string, string, projects.UpdateWebhookInput) (projects.Webhook, error) {
+	return projects.Webhook{}, nil
+}
 func (service *configurableProjectService) ListWebhooks(context.Context, string, string) ([]projects.Webhook, error) {
 	return service.webhooks, service.listHooksErr
 }
@@ -114,6 +117,15 @@ func (stubHistoryService) IncidentPage(context.Context, string, string, string, 
 }
 func (stubHistoryService) Summary(context.Context, string, string, string, monitoring.HistoryQuery) (monitoring.MonitorSummary, error) {
 	return monitoring.MonitorSummary{}, nil
+}
+func (stubHistoryService) ListNotifications(context.Context, string, string, int, string) (monitoring.NotificationPage, error) {
+	return monitoring.NotificationPage{Notifications: []monitoring.NotificationEvent{}}, nil
+}
+func (stubHistoryService) EnqueueTestNotification(context.Context, string, string, time.Time) (monitoring.NotificationEvent, error) {
+	return monitoring.NotificationEvent{}, nil
+}
+func (stubHistoryService) RetryFailedNotification(context.Context, string, string, string, time.Time) error {
+	return nil
 }
 
 func authenticatedProjectHandlers(service *configurableProjectService) *projectHandlers {
@@ -258,5 +270,37 @@ func TestDeleteWebhookHandlerRequiresConfirmation(t *testing.T) {
 	}
 	if service.deletedHookID != "22222222-2222-4222-8222-222222222222" {
 		t.Fatalf("deleted webhook = %q, want requested ID", service.deletedHookID)
+	}
+}
+
+func TestNotificationRoutes(t *testing.T) {
+	service := &configurableProjectService{}
+	handlers := authenticatedProjectHandlers(service)
+	projectID := "11111111-1111-4111-8111-111111111111"
+
+	listRequest := httptest.NewRequest(http.MethodGet, "/api/v1/projects/"+projectID+"/notifications", nil)
+	addSessionCookie(listRequest)
+	listResponse := httptest.NewRecorder()
+	handlers.item(listResponse, listRequest)
+	if listResponse.Code != http.StatusOK || !strings.Contains(listResponse.Body.String(), `"notifications":[]`) {
+		t.Fatalf("list status = %d, body = %s", listResponse.Code, listResponse.Body.String())
+	}
+
+	testRequest := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID+"/notifications/test", nil)
+	testRequest.Header.Set("Origin", "https://app.example.com")
+	addSessionCookie(testRequest)
+	testResponse := httptest.NewRecorder()
+	handlers.item(testResponse, testRequest)
+	if testResponse.Code != http.StatusAccepted {
+		t.Fatalf("test status = %d, body = %s", testResponse.Code, testResponse.Body.String())
+	}
+
+	retryRequest := httptest.NewRequest(http.MethodPost, "/api/v1/projects/"+projectID+"/notifications/22222222-2222-4222-8222-222222222222/retry", nil)
+	retryRequest.Header.Set("Origin", "https://app.example.com")
+	addSessionCookie(retryRequest)
+	retryResponse := httptest.NewRecorder()
+	handlers.item(retryResponse, retryRequest)
+	if retryResponse.Code != http.StatusBadRequest || !strings.Contains(retryResponse.Body.String(), "confirmation_required") {
+		t.Fatalf("retry status = %d, body = %s", retryResponse.Code, retryResponse.Body.String())
 	}
 }

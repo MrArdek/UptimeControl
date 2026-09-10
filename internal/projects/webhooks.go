@@ -39,6 +39,11 @@ type CreateWebhookInput struct {
 	Events string
 }
 
+type UpdateWebhookInput struct {
+	Events  *string
+	Enabled *bool
+}
+
 func (service *Service) CreateWebhook(
 	ctx context.Context,
 	userID,
@@ -107,6 +112,29 @@ func (service *Service) DeleteWebhook(ctx context.Context, userID, projectID, we
 	}
 
 	return service.store.SoftDeleteWebhook(ctx, userID, projectID, webhookID)
+}
+
+func (service *Service) UpdateWebhook(
+	ctx context.Context,
+	userID,
+	projectID,
+	webhookID string,
+	input UpdateWebhookInput,
+) (Webhook, error) {
+	if !identity.ValidUUID(projectID) || !identity.ValidUUID(webhookID) {
+		return Webhook{}, ErrNotFound
+	}
+	if input.Events == nil && input.Enabled == nil {
+		return Webhook{}, ErrEmptyUpdate
+	}
+	if input.Events != nil {
+		events, err := normalizeWebhookEvents(*input.Events)
+		if err != nil {
+			return Webhook{}, err
+		}
+		input.Events = &events
+	}
+	return service.store.UpdateWebhook(ctx, userID, projectID, webhookID, input)
 }
 
 func newWebhookSecret() (string, []byte, error) {

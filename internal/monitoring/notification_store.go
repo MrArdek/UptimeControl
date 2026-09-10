@@ -2,11 +2,43 @@ package monitoring
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/MrArdek/UptimeControl/internal/identity"
+	"github.com/MrArdek/UptimeControl/internal/pagination"
+	"github.com/jackc/pgx/v5"
 )
+
+type NotificationAttempt struct {
+	Attempt     int       `json:"attempt"`
+	Success     bool      `json:"success"`
+	ErrorCode   *string   `json:"error_code"`
+	StartedAt   time.Time `json:"started_at"`
+	CompletedAt time.Time `json:"completed_at"`
+}
+
+type NotificationEvent struct {
+	ID          string                `json:"id"`
+	ProjectID   string                `json:"project_id"`
+	MonitorID   string                `json:"monitor_id"`
+	Kind        string                `json:"kind"`
+	MonitorName string                `json:"monitor_name"`
+	Status      string                `json:"status"`
+	Attempts    int                   `json:"attempts"`
+	LastError   *string               `json:"last_error"`
+	OccurredAt  time.Time             `json:"occurred_at"`
+	AvailableAt time.Time             `json:"available_at"`
+	DeliveredAt *time.Time            `json:"delivered_at"`
+	CreatedAt   time.Time             `json:"created_at"`
+	History     []NotificationAttempt `json:"attempt_history"`
+}
+
+type NotificationPage struct {
+	Notifications []NotificationEvent `json:"notifications"`
+	NextCursor    *string             `json:"next_cursor"`
+}
 
 func enqueueTransition(ctx context.Context, executor resultExecutor, transition *Transition) error {
 	if transition == nil || transition.Empty() {
@@ -157,6 +189,9 @@ func nullableErrorCode(value string) any {
 }
 
 func (store *PostgresStore) RetryFailedNotification(ctx context.Context, userID, projectID, notificationID string, now time.Time) error {
+	if !identity.ValidUUID(projectID) || !identity.ValidUUID(notificationID) {
+		return ErrNotFound
+	}
 	commandTag, err := store.database.Exec(ctx, `
 		UPDATE notification_events
 		SET status = 'pending', attempts = 0, available_at = $4,
@@ -174,4 +209,150 @@ func (store *PostgresStore) RetryFailedNotification(ctx context.Context, userID,
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (store *PostgresStore) EnqueueTestNotification(
+	ctx context.Context,
+	userID,
+	projectID string,
+	now time.Time,
+) (NotificationEvent, error) {
+	if !identity.ValidUUID(projectID) {
+		return NotificationEvent{}, ErrNotFound
+	}
+	var transition Transition
+	err := store.database.QueryRow(ctx, `
+		SELECT projects.id, projects.name, monitors.id, monitors.name, monitors.url, monitors.target
+		FROM projects
+		JOIN monitors ON monitors.project_id = projects.id
+		WHERE projects.id = $1 AND projects.user_id = $2
+		  AND projects.deleted_at IS NULL AND monitors.deleted_at IS NULL
+		ORDER BY monitors.created_at, monitors.id
+		LIMIT 1
+	`, projectID, userID).Scan(
+		&transition.ProjectID, &transition.ProjectName, &transition.MonitorID,
+		&transition.MonitorName, &transition.URL, &transition.Target,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return NotificationEvent{}, ErrNotFound
+	}
+	if err != nil {
+		return NotificationEvent{}, fmt.Errorf("select test notification target: %w", err)
+	}
+	transition.Kind = "test"
+	transition.OccurredAt = now.UTC()
+	if err := enqueueTransition(ctx, store.database, &transition); err != nil {
+		return NotificationEvent{}, err
+	}
+	return NotificationEvent{
+		ID: transition.EventID, ProjectID: transition.ProjectID, MonitorID: transition.MonitorID,
+		Kind: transition.Kind, MonitorName: transition.MonitorName, Status: "pending",
+		OccurredAt: transition.OccurredAt, AvailableAt: transition.OccurredAt,
+		CreatedAt: transition.OccurredAt, History: []NotificationAttempt{},
+	}, nil
+}
+
+func (store *PostgresStore) ListNotifications(
+	ctx context.Context,
+	userID,
+	projectID string,
+	limit int,
+	cursor string,
+) (NotificationPage, error) {
+	limit = normalizeLimit(limit)
+	arguments := []any{userID, projectID}
+	statement := `
+		SELECT notification_events.id, notification_events.project_id,
+		       notification_events.monitor_id, notification_events.kind,
+		       notification_events.monitor_name, notification_events.status,
+		       notification_events.attempts, notification_events.last_error,
+		       notification_events.occurred_at, notification_events.available_at,
+		       notification_events.delivered_at, notification_events.created_at
+		FROM notification_events
+		JOIN projects ON projects.id = notification_events.project_id
+		WHERE projects.user_id = $1 AND projects.id = $2 AND projects.deleted_at IS NULL`
+	scope := "notifications:" + userID + ":" + projectID
+	if cursor != "" {
+		beforeTime, beforeID, err := pagination.Decode(cursor, scope)
+		if err != nil || !identity.ValidUUID(beforeID) {
+			return NotificationPage{}, ErrInvalidCursor
+		}
+		statement += ` AND (notification_events.created_at, notification_events.id) < ($3, $4::uuid)`
+		arguments = append(arguments, beforeTime, beforeID)
+	}
+	statement += ` ORDER BY notification_events.created_at DESC, notification_events.id DESC LIMIT $` + fmt.Sprint(len(arguments)+1)
+	arguments = append(arguments, limit+1)
+	rows, err := store.database.Query(ctx, statement, arguments...)
+	if err != nil {
+		return NotificationPage{}, fmt.Errorf("list notifications: %w", err)
+	}
+	defer rows.Close()
+	events := make([]NotificationEvent, 0, limit+1)
+	for rows.Next() {
+		var event NotificationEvent
+		var deliveredAt *time.Time
+		if err := rows.Scan(
+			&event.ID, &event.ProjectID, &event.MonitorID, &event.Kind,
+			&event.MonitorName, &event.Status, &event.Attempts, &event.LastError,
+			&event.OccurredAt, &event.AvailableAt, &deliveredAt, &event.CreatedAt,
+		); err != nil {
+			return NotificationPage{}, fmt.Errorf("scan notification: %w", err)
+		}
+		event.OccurredAt = event.OccurredAt.UTC()
+		event.AvailableAt = event.AvailableAt.UTC()
+		event.CreatedAt = event.CreatedAt.UTC()
+		if deliveredAt != nil {
+			value := deliveredAt.UTC()
+			event.DeliveredAt = &value
+		}
+		events = append(events, event)
+	}
+	if err := rows.Err(); err != nil {
+		return NotificationPage{}, fmt.Errorf("iterate notifications: %w", err)
+	}
+	page := NotificationPage{Notifications: events}
+	if len(events) > limit {
+		page.Notifications = events[:limit]
+		last := page.Notifications[len(page.Notifications)-1]
+		next, err := pagination.Encode(last.CreatedAt, last.ID, scope)
+		if err != nil {
+			return NotificationPage{}, fmt.Errorf("encode notification cursor: %w", err)
+		}
+		page.NextCursor = &next
+	}
+	for index := range page.Notifications {
+		history, err := store.notificationAttempts(ctx, page.Notifications[index].ID)
+		if err != nil {
+			return NotificationPage{}, err
+		}
+		page.Notifications[index].History = history
+	}
+	return page, nil
+}
+
+func (store *PostgresStore) notificationAttempts(ctx context.Context, notificationID string) ([]NotificationAttempt, error) {
+	rows, err := store.database.Query(ctx, `
+		SELECT attempt, success, error_code, started_at, completed_at
+		FROM notification_attempts
+		WHERE notification_id = $1
+		ORDER BY id DESC
+	`, notificationID)
+	if err != nil {
+		return nil, fmt.Errorf("list notification attempts: %w", err)
+	}
+	defer rows.Close()
+	history := make([]NotificationAttempt, 0)
+	for rows.Next() {
+		var attempt NotificationAttempt
+		if err := rows.Scan(&attempt.Attempt, &attempt.Success, &attempt.ErrorCode, &attempt.StartedAt, &attempt.CompletedAt); err != nil {
+			return nil, fmt.Errorf("scan notification attempt: %w", err)
+		}
+		attempt.StartedAt = attempt.StartedAt.UTC()
+		attempt.CompletedAt = attempt.CompletedAt.UTC()
+		history = append(history, attempt)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate notification attempts: %w", err)
+	}
+	return history, nil
 }

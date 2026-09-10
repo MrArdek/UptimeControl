@@ -562,6 +562,37 @@ func (store *PostgresStore) SoftDeleteWebhook(ctx context.Context, userID, proje
 	return nil
 }
 
+func (store *PostgresStore) UpdateWebhook(
+	ctx context.Context,
+	userID,
+	projectID,
+	webhookID string,
+	input UpdateWebhookInput,
+) (Webhook, error) {
+	var hook Webhook
+	err := store.database.QueryRow(ctx, `
+		UPDATE project_webhooks
+		SET events = COALESCE($4, events), enabled = COALESCE($5, enabled), updated_at = now()
+		WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL
+		  AND EXISTS (
+			SELECT 1 FROM projects
+			WHERE projects.id = $2 AND projects.user_id = $3 AND projects.deleted_at IS NULL
+		  )
+		RETURNING id, project_id, url, events, enabled, created_at, updated_at
+	`, webhookID, projectID, userID, optionalString(input.Events), optionalBool(input.Enabled)).Scan(
+		&hook.ID, &hook.ProjectID, &hook.URL, &hook.Events, &hook.Enabled, &hook.CreatedAt, &hook.UpdatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Webhook{}, ErrNotFound
+	}
+	if err != nil {
+		return Webhook{}, fmt.Errorf("update webhook: %w", err)
+	}
+	hook.CreatedAt = hook.CreatedAt.UTC()
+	hook.UpdatedAt = hook.UpdatedAt.UTC()
+	return hook, nil
+}
+
 // ActiveWebhooks loads enabled endpoints for the notification dispatcher.
 // It intentionally takes no user ID: the project ID comes from a trusted
 // scheduler transition, and secrets never leave the backend process.

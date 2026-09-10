@@ -25,6 +25,7 @@ type projectService interface {
 	UpdateMonitor(context.Context, string, string, string, projects.UpdateMonitorInput) (projects.Monitor, error)
 	DeleteMonitor(context.Context, string, string, string) error
 	CreateWebhook(context.Context, string, string, projects.CreateWebhookInput) (projects.Webhook, error)
+	UpdateWebhook(context.Context, string, string, string, projects.UpdateWebhookInput) (projects.Webhook, error)
 	ListWebhooks(context.Context, string, string) ([]projects.Webhook, error)
 	DeleteWebhook(context.Context, string, string, string) error
 }
@@ -33,6 +34,9 @@ type historyService interface {
 	CheckPage(context.Context, string, string, string, monitoring.HistoryQuery) (monitoring.CheckPage, error)
 	IncidentPage(context.Context, string, string, string, monitoring.HistoryQuery) (monitoring.IncidentPage, error)
 	Summary(context.Context, string, string, string, monitoring.HistoryQuery) (monitoring.MonitorSummary, error)
+	ListNotifications(context.Context, string, string, int, string) (monitoring.NotificationPage, error)
+	EnqueueTestNotification(context.Context, string, string, time.Time) (monitoring.NotificationEvent, error)
+	RetryFailedNotification(context.Context, string, string, string, time.Time) error
 }
 
 type projectHandlers struct {
@@ -82,6 +86,11 @@ type monitorResponse struct {
 type createWebhookRequest struct {
 	URL    string `json:"url"`
 	Events string `json:"events"`
+}
+
+type updateWebhookRequest struct {
+	Events  *string `json:"events"`
+	Enabled *bool   `json:"enabled"`
 }
 
 type webhookResponse struct {
@@ -143,9 +152,98 @@ func (handlers *projectHandlers) item(response http.ResponseWriter, request *htt
 		handlers.webhookCollection(response, request, projectID)
 	case len(parts) == 3 && parts[1] == "webhooks":
 		handlers.webhookItem(response, request, projectID, parts[2])
+	case len(parts) == 2 && parts[1] == "notifications":
+		handlers.notifications(response, request, projectID)
+	case len(parts) == 3 && parts[1] == "notifications" && parts[2] == "test":
+		handlers.testNotification(response, request, projectID)
+	case len(parts) == 4 && parts[1] == "notifications" && parts[3] == "retry":
+		handlers.retryNotification(response, request, projectID, parts[2])
 	default:
 		writeError(response, http.StatusNotFound, "project_not_found", "project was not found")
 	}
+}
+
+func (handlers *projectHandlers) notifications(response http.ResponseWriter, request *http.Request, projectID string) {
+	if request.Method != http.MethodGet {
+		methodNotAllowed(response, http.MethodGet)
+		return
+	}
+	user, ok := handlers.authorize(response, request)
+	if !ok {
+		return
+	}
+	if _, err := handlers.projects.ByID(request.Context(), user.ID, projectID); err != nil {
+		handlers.writeProjectError(response, err)
+		return
+	}
+	page, err := handlers.history.ListNotifications(
+		request.Context(), user.ID, projectID, queryLimit(request), request.URL.Query().Get("cursor"),
+	)
+	if errors.Is(err, monitoring.ErrInvalidCursor) {
+		writeError(response, http.StatusBadRequest, "invalid_cursor", "cursor is invalid for this notification list")
+		return
+	}
+	if err != nil {
+		writeError(response, http.StatusInternalServerError, "internal_error", "request could not be completed")
+		return
+	}
+	writeJSON(response, http.StatusOK, page)
+}
+
+func (handlers *projectHandlers) testNotification(response http.ResponseWriter, request *http.Request, projectID string) {
+	if request.Method != http.MethodPost {
+		methodNotAllowed(response, http.MethodPost)
+		return
+	}
+	if !handlers.validOrigin(request) {
+		writeError(response, http.StatusForbidden, "invalid_origin", "request origin is not allowed")
+		return
+	}
+	user, ok := handlers.authorize(response, request)
+	if !ok {
+		return
+	}
+	event, err := handlers.history.EnqueueTestNotification(request.Context(), user.ID, projectID, time.Now().UTC())
+	if errors.Is(err, monitoring.ErrNotFound) {
+		writeError(response, http.StatusNotFound, "project_not_found", "project was not found")
+		return
+	}
+	if err != nil {
+		writeError(response, http.StatusInternalServerError, "internal_error", "request could not be completed")
+		return
+	}
+	writeJSON(response, http.StatusAccepted, struct {
+		Notification monitoring.NotificationEvent `json:"notification"`
+	}{Notification: event})
+}
+
+func (handlers *projectHandlers) retryNotification(response http.ResponseWriter, request *http.Request, projectID, notificationID string) {
+	if request.Method != http.MethodPost {
+		methodNotAllowed(response, http.MethodPost)
+		return
+	}
+	if !handlers.validOrigin(request) {
+		writeError(response, http.StatusForbidden, "invalid_origin", "request origin is not allowed")
+		return
+	}
+	if request.Header.Get("X-Confirm-Retry") != "true" {
+		writeError(response, http.StatusBadRequest, "confirmation_required", "notification retry must be explicitly confirmed")
+		return
+	}
+	user, ok := handlers.authorize(response, request)
+	if !ok {
+		return
+	}
+	err := handlers.history.RetryFailedNotification(request.Context(), user.ID, projectID, notificationID, time.Now().UTC())
+	if errors.Is(err, monitoring.ErrNotFound) {
+		writeError(response, http.StatusNotFound, "notification_not_found", "failed notification was not found")
+		return
+	}
+	if err != nil {
+		writeError(response, http.StatusInternalServerError, "internal_error", "request could not be completed")
+		return
+	}
+	response.WriteHeader(http.StatusNoContent)
 }
 
 func (handlers *projectHandlers) list(response http.ResponseWriter, request *http.Request) {
@@ -322,10 +420,6 @@ func (handlers *projectHandlers) webhookCollection(response http.ResponseWriter,
 }
 
 func (handlers *projectHandlers) webhookItem(response http.ResponseWriter, request *http.Request, projectID, webhookID string) {
-	if request.Method != http.MethodDelete {
-		methodNotAllowed(response, http.MethodDelete)
-		return
-	}
 	if !handlers.validOrigin(request) {
 		writeError(response, http.StatusForbidden, "invalid_origin", "request origin is not allowed")
 		return
@@ -334,15 +428,33 @@ func (handlers *projectHandlers) webhookItem(response http.ResponseWriter, reque
 	if !ok {
 		return
 	}
-	if request.Header.Get("X-Confirm-Delete") != "true" {
-		writeError(response, http.StatusBadRequest, "confirmation_required", "webhook deletion must be explicitly confirmed")
-		return
+	switch request.Method {
+	case http.MethodPatch:
+		var payload updateWebhookRequest
+		if err := decodeJSONRequest(response, request, maximumProjectBody, &payload); err != nil {
+			writeError(response, http.StatusBadRequest, "invalid_request", "webhook fields must be a valid JSON object")
+			return
+		}
+		hook, err := handlers.projects.UpdateWebhook(request.Context(), user.ID, projectID, webhookID, projects.UpdateWebhookInput{
+			Events: payload.Events, Enabled: payload.Enabled,
+		})
+		if handlers.writeProjectError(response, err) {
+			return
+		}
+		writeJSON(response, http.StatusOK, webhookResponse{Webhook: hook})
+	case http.MethodDelete:
+		if request.Header.Get("X-Confirm-Delete") != "true" {
+			writeError(response, http.StatusBadRequest, "confirmation_required", "webhook deletion must be explicitly confirmed")
+			return
+		}
+		if handlers.writeProjectError(response, handlers.projects.DeleteWebhook(request.Context(), user.ID, projectID, webhookID)) {
+			return
+		}
+		response.Header().Set("Cache-Control", "no-store")
+		response.WriteHeader(http.StatusNoContent)
+	default:
+		methodNotAllowed(response, http.MethodPatch+", "+http.MethodDelete)
 	}
-	if handlers.writeProjectError(response, handlers.projects.DeleteWebhook(request.Context(), user.ID, projectID, webhookID)) {
-		return
-	}
-	response.Header().Set("Cache-Control", "no-store")
-	response.WriteHeader(http.StatusNoContent)
 }
 
 func (handlers *projectHandlers) listWebhooks(response http.ResponseWriter, request *http.Request, projectID string) {

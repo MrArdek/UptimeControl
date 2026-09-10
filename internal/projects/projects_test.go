@@ -14,6 +14,7 @@ type memoryStore struct {
 	listedProjects []Project
 	pageRequest    ProjectPageRequest
 	webhooks       []Webhook
+	webhookUpdate  UpdateWebhookInput
 }
 
 func (store *memoryStore) ListPage(_ context.Context, _ string, request ProjectPageRequest) ([]Project, error) {
@@ -47,8 +48,19 @@ func (store *memoryStore) ListWebhooks(context.Context, string, string) ([]Webho
 func (store *memoryStore) CreateWebhook(_ context.Context, _ string, _ string, hook Webhook, _ []byte) (Webhook, error) {
 	return hook, nil
 }
+func (store *memoryStore) UpdateWebhook(_ context.Context, _, _, _ string, input UpdateWebhookInput) (Webhook, error) {
+	store.webhookUpdate = input
+	return Webhook{Events: valueOrEmpty(input.Events), Enabled: input.Enabled != nil && *input.Enabled}, nil
+}
 func (store *memoryStore) SoftDeleteWebhook(context.Context, string, string, string) error {
 	return nil
+}
+
+func valueOrEmpty(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 func (store *memoryStore) ActiveWebhooks(context.Context, string) ([]monitoring.WebhookEndpoint, error) {
 	return nil, nil

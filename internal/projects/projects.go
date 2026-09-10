@@ -122,6 +122,7 @@ type Store interface {
 	SoftDeleteMonitor(context.Context, string, string, string) error
 	ListWebhooks(context.Context, string, string) ([]Webhook, error)
 	CreateWebhook(context.Context, string, string, Webhook, []byte) (Webhook, error)
+	UpdateWebhook(context.Context, string, string, string, UpdateWebhookInput) (Webhook, error)
 	SoftDeleteWebhook(context.Context, string, string, string) error
 }
 
