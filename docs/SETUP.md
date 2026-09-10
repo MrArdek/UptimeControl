@@ -269,6 +269,32 @@ curl -i -b "$UPTIME_COOKIE_JAR" \
 
 Ответ один раз содержит `secret` — сохраните его для проверки подписи `X-UptimeControl-Signature`. Список (`GET` на тот же путь) секретов не возвращает. Подробный формат доставки описан в `docs/API.md`.
 
+Пробная отправка ставится в очередь и сразу возвращает `202`:
+
+```bash
+curl -i -b "$UPTIME_COOKIE_JAR" \
+  -H 'Origin: http://localhost:8080' \
+  -X POST http://localhost:8080/api/v1/projects/PROJECT_ID/notifications/test
+```
+
+Просмотреть состояния и попытки:
+
+```bash
+curl -sS -b "$UPTIME_COOKIE_JAR" \
+  'http://localhost:8080/api/v1/projects/PROJECT_ID/notifications?limit=20'
+```
+
+Событие в состоянии `failed` можно явно вернуть в очередь:
+
+```bash
+curl -i -b "$UPTIME_COOKIE_JAR" \
+  -H 'Origin: http://localhost:8080' \
+  -H 'X-Confirm-Retry: true' \
+  -X POST http://localhost:8080/api/v1/projects/PROJECT_ID/notifications/NOTIFICATION_ID/retry
+```
+
+Эти действия также доступны через кнопку «Уведомления» в Dashboard.
+
 ## Dashboard
 
 После запуска откройте `http://localhost:8080/` или путь из `BASE_PATH`. Первый зарегистрированный пользователь становится владельцем установки. Повторная публичная регистрация автоматически закрывается.

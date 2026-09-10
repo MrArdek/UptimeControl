@@ -334,7 +334,7 @@ curl --fail -X POST 'https://uptime.example.com/api/v1/heartbeat/SECRET_TOKEN'
 
 ### Webhooks: исходящие уведомления
 
-Каждый проект может иметь до 5 webhook-эндпоинтов. При открытии (`down`) и закрытии (`recovered`) инцидента планировщик отправляет подписанный `POST` на каждый включённый URL, подписанный на это событие. Работает рядом с Telegram: старые установки без webhooks ничего не замечают.
+Каждый проект может иметь до 5 webhook-эндпоинтов. При открытии (`down`) и закрытии (`recovered`) инцидента событие транзакционно попадает в постоянную очередь, а отдельный worker отправляет подписанный `POST` на каждый включённый URL, подписанный на это событие. Работает рядом с Telegram.
 
 ```bash
 curl -X POST "$ORIGIN/api/v1/projects/$PROJECT_ID/webhooks" \
@@ -364,6 +364,7 @@ curl -X POST "$ORIGIN/api/v1/projects/$PROJECT_ID/webhooks" \
 ```
 
 - `GET /api/v1/projects/{projectID}/webhooks` — список без секретов;
+- `PATCH /api/v1/projects/{projectID}/webhooks/{webhookID}` — меняет `events` и/или `enabled`;
 - `DELETE /api/v1/projects/{projectID}/webhooks/{webhookID}` — мягкое удаление, требуется `X-Confirm-Delete: true`, ответ `204`.
 
 Ошибки совпадают с проектами, плюс `400 invalid_events` (события вне `down,recovered`) и `409 webhook_limit` (у проекта уже 5 webhooks). Чужой проект возвращает тот же `404 project_not_found`.
@@ -372,6 +373,7 @@ curl -X POST "$ORIGIN/api/v1/projects/$PROJECT_ID/webhooks" \
 
 ```json
 {
+  "event_id": "00000000-0000-4000-8000-000000000010",
   "event": "down",
   "project_id": "00000000-0000-4000-8000-000000000001",
   "project_name": "Public API",
@@ -383,14 +385,32 @@ curl -X POST "$ORIGIN/api/v1/projects/$PROJECT_ID/webhooks" \
 }
 ```
 
-Заголовки каждого запроса: `Content-Type: application/json`, `X-UptimeControl-Event: down|recovered`, `X-UptimeControl-Signature: sha256=<HMAC-SHA256(secret, body)>`. Подпись проверяйте так:
+Заголовки каждого запроса: `Content-Type: application/json`, `X-UptimeControl-Event: down|recovered|test`, `X-UptimeControl-Event-ID: <event_id>`, `X-UptimeControl-Signature: sha256=<HMAC-SHA256(secret, body)>`. Подпись проверяйте так:
 
 ```python
 hmac.compare_digest("sha256=" + hmac.new(secret, body, hashlib.sha256).hexdigest(),
                      request.headers["X-UptimeControl-Signature"])
 ```
 
-Исходящие запросы идут через тот же безопасный транспорт, что и проверки: без proxy, с DNS/IP-проверкой каждого соединения, максимум 3 редиректа только на публичные URL, таймаут 10 секунд, до 3 попыток. Итог каждой доставки пишется в `webhook_deliveries`.
+Доставка имеет семантику **как минимум один раз**. Если получатель принял POST, но worker не смог зафиксировать успех до завершения аренды, событие будет отправлено повторно. Получатель должен сохранять `event_id` и отвечать `2xx` на уже обработанный ID без повторения бизнес-действия.
+
+### GET /api/v1/projects/{projectID}/notifications
+
+Возвращает журнал событий доставки текущего владельца. Поддерживает `limit` от 1 до 500 и `cursor`. Каждый элемент содержит стабильный `id`, тип, monitor, состояние `pending|processing|delivered|failed`, число попыток, время следующей попытки, безопасный `last_error` и `attempt_history`.
+
+История не содержит URL назначения, Telegram token, chat ID или webhook secret. Возможные коды ошибок ограничены значениями вроде `channel_delivery_failed` и `delivery_timeout`.
+
+### POST /api/v1/projects/{projectID}/notifications/test
+
+Создаёт асинхронное событие `test` и отвечает `202 Accepted`. Событие проходит ту же очередь, Telegram и все включённые webhooks, но не открывает инцидент.
+
+### POST /api/v1/projects/{projectID}/notifications/{notificationID}/retry
+
+Повторно ставит в очередь только событие со статусом `failed`. Требует cookie, допустимый Origin и заголовок `X-Confirm-Retry: true`; успех — `204 No Content`. Чужое, несуществующее или ещё активное событие получает одинаковый `404 notification_not_found`.
+
+Worker выполняет до 8 циклов доставки с задержками `5s`, `30s`, `2m`, `10m`, `30m`, `1h`, `2h`; один цикл ограничен 20 секундами. До четырёх событий доставляются параллельно. Состояние `processing` с просроченной минутной арендой снова доступно после рестарта. Один queue worker не захватывает событие, уже арендованное другим worker.
+
+Исходящие запросы идут через тот же безопасный транспорт, что и проверки: без proxy, с DNS/IP-проверкой каждого соединения, максимум 3 редиректа только на публичные URL и сетевой таймаут 10 секунд. Один вызов канала делает один запрос; повторы и общий 20-секундный лимит управляются постоянной очередью. Webhook-исход пишется в `webhook_deliveries`, а исход полного fan-out — в `notification_attempts`.
 
 ## Устаревший API сайтов
 

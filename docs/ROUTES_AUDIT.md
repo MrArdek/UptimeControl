@@ -1,6 +1,6 @@
 # Аудит маршрутов и ролей
 
-Дата актуализации: 2026-09-08
+Дата актуализации: 2026-09-10
 
 ## Текущее состояние
 
@@ -30,7 +30,10 @@
 | GET | `/api/v1/projects/{projectID}/monitors/{monitorID}/summary` | Uptime, coverage, response time и последний инцидент | Владелец | SQL одновременно фильтрует project, monitor и владельца; период до 31 дня |
 | POST | `/api/v1/heartbeat/{token}` | Сигнал бота/worker | Секретный токен | В БД только SHA-256; неизвестный токен тоже получает `204` |
 | GET/POST | `/api/v1/projects/{projectID}/webhooks` | Список и создание webhooks | Владелец | Владелец проекта, Origin для POST, URL по SSRF-политике, до 5 на проект |
-| DELETE | `/api/v1/projects/{projectID}/webhooks/{webhookID}` | Удаление webhook | Владелец | Проект, webhook и владелец; подтверждение удаления |
+| PATCH/DELETE | `/api/v1/projects/{projectID}/webhooks/{webhookID}` | Подписка, включение и удаление webhook | Владелец | Проект, webhook и владелец; Origin; подтверждение удаления |
+| GET | `/api/v1/projects/{projectID}/notifications` | Пагинированный журнал доставки | Владелец | Проект сначала проверяется по `id` + `user_id`; курсор привязан к владельцу и проекту |
+| POST | `/api/v1/projects/{projectID}/notifications/test` | Пробная асинхронная доставка | Владелец | Cookie, Origin, project owner; создаёт событие без инцидента |
+| POST | `/api/v1/projects/{projectID}/notifications/{notificationID}/retry` | Повтор окончательно неудачной доставки | Владелец | Cookie, Origin, project/event owner, только `failed`, `X-Confirm-Retry: true` |
 
 ## Реализованные роли
 

@@ -1,6 +1,6 @@
 # Карта проекта
 
-Дата актуализации: 2026-09-08
+Дата актуализации: 2026-09-10
 
 ## Текущее дерево
 
@@ -61,11 +61,14 @@ UptimeControl/
 │   │   │   ├── 000003_projects_and_monitors.up.sql
 │   │   │   ├── 000004_project_webhooks.up.sql
 │   │   │   ├── 000005_tcp_monitors.up.sql
+│   │   │   ├── 000006_notification_queue.up.sql
 │   │   │   └── README.md
 │   │   └── migrations.go
 │   ├── monitoring/
 │   │   ├── checker.go
 │   │   ├── history.go
+│   │   ├── notification_queue.go
+│   │   ├── notification_store.go
 │   │   ├── notify.go
 │   │   ├── postgres_store.go
 │   │   ├── scheduler.go
@@ -140,7 +143,7 @@ UptimeControl/
 
 ### `/internal/monitoring`
 
-Планировщик заданий, безопасные HTTP/TCP checkers, пагинированная история, расчёт uptime/coverage, запись инцидентов, приём heartbeat, Telegram-уведомления и диспетчер исходящих webhooks (`MultiNotifier` рассылает событие всем каналам, не ломая старые).
+Планировщик заданий, безопасные HTTP/TCP checkers, пагинированная история, расчёт uptime/coverage, запись инцидентов и приём heartbeat. Постоянная очередь отдельно доставляет Telegram и HMAC-webhooks с арендой, retry и журналом попыток.
 
 ### `/internal/netpolicy`
 
@@ -156,7 +159,7 @@ UptimeControl/
 
 ### `/internal/httpserver`
 
-Создаёт HTTP-сервер, встроенный Dashboard и маршруты health, auth, projects, monitors, history, summary и heartbeat. Здесь также находятся Origin-проверка, лимит запросов и тесты.
+Создаёт HTTP-сервер, встроенный Dashboard и маршруты health, auth, projects, monitors, history, summary, notifications и heartbeat. Здесь также находятся Origin-проверка, лимит запросов и тесты.
 
 ### `/internal/postgres`
 
@@ -218,7 +221,7 @@ UptimeControl/
 | HTTP-сервер и Dashboard | `internal/httpserver` | UI, служебные, auth-, project- и heartbeat-маршруты |
 | Авторизация | `internal/auth` | Регистрация, вход, сессии и Argon2id |
 | Проекты | `internal/projects` | CRUD проектов и HTTP/TCP/heartbeat monitors, cursor pagination |
-| Мониторинг | `internal/monitoring` | Scheduler, HTTP checker, heartbeat, история, инциденты и Telegram |
+| Мониторинг | `internal/monitoring` | Scheduler, checkers, история, инциденты и постоянная очередь Telegram/webhook |
 | Сетевая безопасность | `internal/netpolicy` | URL, DNS/IP и SSRF-политика |
 | Старый site API | `internal/sites` | Не регистрируется основной точкой запуска |
 | PostgreSQL | `internal/postgres` | Пул соединений и проверка подключения |
