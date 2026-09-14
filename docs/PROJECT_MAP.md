@@ -1,6 +1,6 @@
 # Карта проекта
 
-Дата актуализации: 2026-09-11
+Дата актуализации: 2026-09-14
 
 ## Текущее дерево
 
@@ -13,6 +13,8 @@ UptimeControl/
 │   ├── DATABASE.md
 │   ├── DATA_CONTRACTS.md
 │   ├── DECISIONS.md
+│   ├── FRONTEND.md
+│   ├── FRONTEND_DEPENDENCY_ISSUE.md
 │   ├── PLAN.md
 │   ├── PROJECT_MAP.md
 │   ├── PROJECT_STATE.md
@@ -38,6 +40,8 @@ UptimeControl/
 │   │   ├── auth_handlers_test.go
 │   │   ├── dashboard.go
 │   │   ├── heartbeat_handler.go
+│   │   ├── live_events.go
+│   │   ├── live_events_test.go
 │   │   ├── project_handlers.go
 │   │   ├── project_handlers_test.go
 │   │   ├── rate_limiter.go
@@ -63,6 +67,7 @@ UptimeControl/
 │   ├── monitoring/
 │   │   ├── checker.go
 │   │   ├── history.go
+│   │   ├── live.go
 │   │   ├── notification_queue.go
 │   │   ├── notification_store.go
 │   │   ├── notify.go
