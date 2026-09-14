@@ -26,7 +26,7 @@ type configurableProjectService struct {
 }
 
 func (service *configurableProjectService) ListPage(context.Context, string, int, string) (projects.ProjectPage, error) {
-	return projects.ProjectPage{}, nil
+	return projects.ProjectPage{Projects: []projects.Project{}}, nil
 }
 func (service *configurableProjectService) ByID(context.Context, string, string) (projects.Project, error) {
 	return service.project, service.projectErr
@@ -126,6 +126,9 @@ func (stubHistoryService) EnqueueTestNotification(context.Context, string, strin
 }
 func (stubHistoryService) RetryFailedNotification(context.Context, string, string, string, time.Time) error {
 	return nil
+}
+func (stubHistoryService) OpenIncidents(context.Context, string) ([]monitoring.OpenIncident, error) {
+	return []monitoring.OpenIncident{}, nil
 }
 
 func authenticatedProjectHandlers(service *configurableProjectService) *projectHandlers {

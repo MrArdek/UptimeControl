@@ -58,6 +58,10 @@
     .compact-form { display:grid; grid-template-columns:1fr auto; gap:8px; align-items:end; margin:12px 0; }
     .compact-form input { margin-bottom:0; }
     .more { width:100%; margin-top:14px; }
+    .live { display:inline-flex; align-items:center; gap:7px; color:var(--muted); font-size:12px; }
+    .live::before { content:""; width:8px; height:8px; border-radius:50%; background:var(--warn); }
+    .live.connected::before { background:var(--accent); }
+    .incident-banner { margin-bottom:18px; border-color:#6b2b38; background:#30151c; }
     .hidden { display:none !important; }
     @media (max-width:800px) { .layout { grid-template-columns:1fr; } .row,.compact-form { grid-template-columns:1fr; gap:0; } .summary-grid { grid-template-columns:1fr 1fr; } header { align-items:flex-start; } }
   </style>
@@ -87,7 +91,8 @@
   </section>
 
   <section id="app" class="hidden">
-    <div class="toolbar"><div><h2 style="margin-bottom:2px">Проекты</h2><div class="muted" id="owner"></div></div><button id="refresh" class="ghost">Обновить</button></div>
+    <div class="toolbar"><div><h2 style="margin-bottom:2px">Проекты</h2><div class="muted" id="owner"></div><div id="live-status" class="live">Подключение…</div></div><button id="refresh" class="ghost">Обновить</button></div>
+    <div id="incident-banner" class="panel incident-banner hidden" role="status" aria-live="polite"></div>
     <div class="layout">
       <form id="create-project" class="panel">
         <h3>Новый проект</h3><p class="muted">Сайт, API, бот, игра или фоновая задача.</p>
@@ -122,8 +127,8 @@ async function request(path, options={}) {
 }
 
 function message(element, text='') { element.textContent=text; element.classList.toggle('show', Boolean(text)); }
-function showAuth() { $('#auth').classList.remove('hidden'); $('#app').classList.add('hidden'); $('#logout').classList.add('hidden'); }
-function showApp(user) { $('#auth').classList.add('hidden'); $('#app').classList.remove('hidden'); $('#logout').classList.remove('hidden'); $('#owner').textContent=user.email; loadProjects(); }
+function showAuth() { stopLiveUpdates(); $('#auth').classList.remove('hidden'); $('#app').classList.add('hidden'); $('#logout').classList.add('hidden'); }
+function showApp(user) { $('#auth').classList.add('hidden'); $('#app').classList.remove('hidden'); $('#logout').classList.remove('hidden'); $('#owner').textContent=user.email; loadProjects(); startLiveUpdates(); }
 
 document.querySelectorAll('.tab').forEach(button => button.addEventListener('click', () => {
   document.querySelectorAll('.tab').forEach(item => item.classList.toggle('active', item===button));
@@ -175,15 +180,18 @@ function formatDuration(seconds){if(seconds===null||seconds===undefined)return '
 function responseChart(checks,from,to,interval){const samples=checks.filter(item=>item.response_time_ms!==null).sort((a,b)=>new Date(a.checked_at)-new Date(b.checked_at));if(!samples.length)return '<div class="muted">Нет данных response time</div>';const width=700,height=120,pad=12,max=Math.max(...samples.map(item=>item.response_time_ms),1),start=from.getTime(),range=Math.max(to.getTime()-start,1),gap=Math.max(300,2*interval)*1000;let paths=[],current=[];for(const item of samples){const at=new Date(item.checked_at).getTime();if(current.length&&at-current[current.length-1].at>gap){paths.push(current);current=[];}current.push({at,x:pad+(at-start)/range*(width-pad*2),y:height-pad-item.response_time_ms/max*(height-pad*2)});}if(current.length)paths.push(current);const lines=paths.map(points=>`<polyline points="${points.map(point=>`${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' ')}" fill="none" stroke="#72e1a6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`).join('');const dots=samples.map(item=>{const x=pad+(new Date(item.checked_at).getTime()-start)/range*(width-pad*2);const y=height-pad-item.response_time_ms/max*(height-pad*2);return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="#72e1a6"><title>${item.response_time_ms} мс · ${escapeHTML(formatTime(item.checked_at))}</title></circle>`;}).join('');return `<svg class="chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="График времени ответа за 24 часа">${lines}${dots}</svg><div class="chart-note">Пик ${max} мс. Разрывы линии обозначают отсутствие свежих наблюдений.</div>`;}
 let loadedProjects=[];
 let projectsCursor=null;
+function renderProjects(){
+  $('#projects-more').classList.toggle('hidden',!projectsCursor);
+  if(!loadedProjects.length){$('#projects').innerHTML='<div class="panel muted">Пока нет проектов. Создайте первый слева.</div>';return;}
+  $('#projects').innerHTML=loadedProjects.map(project=>`<article class="project" data-project-id="${project.id}"><div class="project-head"><div><h3>${escapeHTML(project.name)}</h3><div class="muted">${escapeHTML(project.description)}</div></div><div class="actions"><button class="ghost" onclick="loadNotificationPanel('${project.id}',this)">Уведомления</button><button class="danger" onclick="deleteProject('${project.id}')">Удалить</button></div></div>${project.monitors.map(monitor=>{const status=monitorStatus(monitor);const address=monitor.type==='heartbeat'?'Heartbeat':monitor.type==='tcp'?`TCP ${escapeHTML(monitor.target)}`:escapeHTML(monitor.url);return `<div class="monitor"><div><h3>${escapeHTML(monitor.name)}</h3><div class="monitor-meta">${address} · каждые ${monitor.check_interval_seconds} сек.<br>Последняя проверка: ${formatTime(monitor.last_checked_at)}${monitor.last_response_time_ms!==null?` · ${monitor.last_response_time_ms} мс`:''}</div><div class="actions"><button class="ghost" onclick="loadHistory('${project.id}','${monitor.id}',${monitor.check_interval_seconds},this)">История и сводка</button></div><div class="history hidden"></div></div><span class="status ${status[0]}">${status[1]}</span></div>`}).join('')}<div class="notification-panel hidden"></div></article>`).join('');
+}
 async function loadProjects(reset=true){
   try {
     if(reset){loadedProjects=[];projectsCursor=null;$('#projects').innerHTML='<div class="panel muted">Загрузка…</div>';}
     const suffix=projectsCursor?`&cursor=${encodeURIComponent(projectsCursor)}`:'';
     const result=await request(`/projects?limit=50${suffix}`);
     loadedProjects=loadedProjects.concat(result.projects);projectsCursor=result.next_cursor;
-    $('#projects-more').classList.toggle('hidden',!projectsCursor);
-    if(!loadedProjects.length){$('#projects').innerHTML='<div class="panel muted">Пока нет проектов. Создайте первый слева.</div>';return;}
-    $('#projects').innerHTML=loadedProjects.map(project=>`<article class="project" data-project-id="${project.id}"><div class="project-head"><div><h3>${escapeHTML(project.name)}</h3><div class="muted">${escapeHTML(project.description)}</div></div><div class="actions"><button class="ghost" onclick="loadNotificationPanel('${project.id}',this)">Уведомления</button><button class="danger" onclick="deleteProject('${project.id}')">Удалить</button></div></div>${project.monitors.map(monitor=>{const status=monitorStatus(monitor);const address=monitor.type==='heartbeat'?'Heartbeat':monitor.type==='tcp'?`TCP ${escapeHTML(monitor.target)}`:escapeHTML(monitor.url);return `<div class="monitor"><div><h3>${escapeHTML(monitor.name)}</h3><div class="monitor-meta">${address} · каждые ${monitor.check_interval_seconds} сек.<br>Последняя проверка: ${formatTime(monitor.last_checked_at)}${monitor.last_response_time_ms!==null?` · ${monitor.last_response_time_ms} мс`:''}</div><div class="actions"><button class="ghost" onclick="loadHistory('${project.id}','${monitor.id}',${monitor.check_interval_seconds},this)">История и сводка</button></div><div class="history hidden"></div></div><span class="status ${status[0]}">${status[1]}</span></div>`}).join('')}<div class="notification-panel hidden"></div></article>`).join('');
+    renderProjects();
   } catch(error){if(error.message.includes('authentication'))showAuth();else $('#projects').innerHTML=`<div class="panel">${escapeHTML(error.message)}</div>`;}
 }
 async function deleteProject(id){if(!confirm('Удалить проект и отключить его проверки?'))return;try{await request(`/projects/${id}`,{method:'DELETE',headers:{'X-Confirm-Delete':'true'}});loadProjects();}catch(error){alert(error.message);}}
@@ -195,6 +203,14 @@ async function toggleWebhook(projectID,webhookID,enabled){try{await request(`/pr
 async function deleteWebhook(projectID,webhookID){if(!confirm('Удалить webhook?'))return;try{await request(`/projects/${projectID}/webhooks/${webhookID}`,{method:'DELETE',headers:{'X-Confirm-Delete':'true'}});await loadNotificationPanel(projectID,null,true);}catch(error){alert(error.message);}}
 async function sendTestNotification(projectID){try{await request(`/projects/${projectID}/notifications/test`,{method:'POST'});await loadNotificationPanel(projectID,null,true);}catch(error){alert(error.message);}}
 async function retryNotification(projectID,eventID){if(!confirm('Повторно поставить неудачную доставку в очередь?'))return;try{await request(`/projects/${projectID}/notifications/${eventID}/retry`,{method:'POST',headers:{'X-Confirm-Retry':'true'}});await loadNotificationPanel(projectID,null,true);}catch(error){alert(error.message);}}
+let liveSource=null;
+let fallbackTimer=null;
+function liveStatus(text,connected=false){$('#live-status').textContent=text;$('#live-status').classList.toggle('connected',connected);}
+function renderOpenIncidents(incidents){const banner=$('#incident-banner');banner.classList.toggle('hidden',!incidents.length);banner.innerHTML=incidents.length?`<strong>Открытые инциденты: ${incidents.length}</strong>${incidents.map(item=>`<div>${escapeHTML(item.project_name)} · ${escapeHTML(item.monitor_name)} · с ${escapeHTML(formatTime(item.started_at))}</div>`).join('')}`:'';}
+function startPollingFallback(){if(fallbackTimer)return;fallbackTimer=setInterval(()=>{if(!document.hidden)loadProjects();},15000);}
+function stopPollingFallback(){if(fallbackTimer){clearInterval(fallbackTimer);fallbackTimer=null;}}
+function startLiveUpdates(){stopLiveUpdates();if(!window.EventSource){liveStatus('Обновление каждые 15 секунд');startPollingFallback();return;}liveStatus('Подключение…');liveSource=new EventSource(api('/events'));liveSource.addEventListener('snapshot',event=>{try{const snapshot=JSON.parse(event.data);loadedProjects=snapshot.projects.projects;projectsCursor=snapshot.projects.next_cursor;renderProjects();renderOpenIncidents(snapshot.incidents);liveStatus('Обновляется в реальном времени',true);stopPollingFallback();}catch{liveStatus('Ошибка данных · резервное обновление');startPollingFallback();}});liveSource.addEventListener('session-expired',()=>showAuth());liveSource.addEventListener('stream-error',()=>{liveStatus('Поток временно недоступен');startPollingFallback();});liveSource.onerror=()=>{liveStatus('Переподключение · резервное обновление');startPollingFallback();};}
+function stopLiveUpdates(){if(liveSource){liveSource.close();liveSource=null;}stopPollingFallback();}
 
 (async()=>{try{const result=await request('/auth/me');showApp(result.user);}catch{showAuth();}})();
 </script>

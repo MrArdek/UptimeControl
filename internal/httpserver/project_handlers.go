@@ -37,6 +37,7 @@ type historyService interface {
 	ListNotifications(context.Context, string, string, int, string) (monitoring.NotificationPage, error)
 	EnqueueTestNotification(context.Context, string, string, time.Time) (monitoring.NotificationEvent, error)
 	RetryFailedNotification(context.Context, string, string, string, time.Time) error
+	OpenIncidents(context.Context, string) ([]monitoring.OpenIncident, error)
 }
 
 type projectHandlers struct {

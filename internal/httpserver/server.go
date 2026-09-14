@@ -118,8 +118,10 @@ func newApplicationHandler(
 
 	if projectManagement != nil && history != nil {
 		projectHandlers := newProjectHandlers(authentication, projectManagement, history, options)
+		liveEvents := newLiveEventSource(authentication, projectManagement, history)
 		mux.HandleFunc(routePath(options.BasePath, "/api/v1/projects"), projectHandlers.collection)
 		mux.HandleFunc(routePath(options.BasePath, "/api/v1/projects/"), projectHandlers.item)
+		mux.HandleFunc(routePath(options.BasePath, "/api/v1/events"), liveEvents.serve)
 	} else {
 		// Kept only for isolated compatibility tests while installations migrate to projects.
 		siteHandlers := newSiteHandlers(authentication, siteManagement, options)
