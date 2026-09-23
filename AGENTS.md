@@ -32,6 +32,7 @@ Self-hosted мониторинг проектов: Go 1.27 (только stdlib 
 - `internal/auth` — email+пароль (Argon2id, 12 символов–128 байт), сессия 7 дней в `HttpOnly; SameSite=Lax` cookie `uptime_session`. В БД только SHA-256-хеш токена. Первый пользователь = владелец, дальше `registration_closed`. Rate-limit in-memory на процесс: register 5/мин, login 10/мин с IP.
 - `internal/projects` — актуальная модель: проект-контейнер (сайт/API/игра/бот) + monitors `http` / `tcp` / `heartbeat`. Удаление мягкое (`deleted_at`), требует заголовка `X-Confirm-Delete: true`. Список использует cursor pagination.
 - `internal/monitoring` — планировщик проверок и отдельный worker постоянной очереди уведомлений через `FOR UPDATE SKIP LOCKED`; безопасные HTTP/TCP-checkers, heartbeat, история/сводки, Telegram и HMAC-webhooks. Переход инцидента и notification event фиксируются транзакционно; доставка at-least-once с `EventID`, 8 попытками и минутной арендой.
+- `internal/checknodes`, `cmd/check-node` — owner/Monitoring API региональных узлов, SHA-256 credential, назначения и кворум; отдельный Go-бинарник выполняет проверки без доступа к БД и буферизует до 1 000 результатов.
 - `internal/pagination` — непрозрачные base64url-курсоры, привязанные хешем к владельцу и фильтрам запроса.
 - `internal/sites` — legacy, основной сервер его не регистрирует. Не развивать, только понимать миграцию `000003`.
 - `internal/netpolicy`, `identity`, `postgres`, `migrations` — SSRF-политика URL, UUID v4, `pgxpool`, SQL-миграции встроены в бинарник и применяются при старте под advisory lock. Применённые миграции не править — только новым файлом с возрастающим номером.
@@ -43,6 +44,7 @@ go test ./...
 go test -race ./...
 go vet ./...
 go build ./...
+go build -o check-node ./cmd/check-node
 DATABASE_URL=postgresql://localhost/uptime_control SESSION_COOKIE_SECURE=false go run .
 curl -i http://localhost:8080/health
 curl -i http://localhost:8080/ready

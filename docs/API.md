@@ -205,7 +205,66 @@ Body имеет тот же формат, что и регистрация.
 - `403 invalid_origin` — браузерный Origin не разрешён;
 - `500 internal_error`.
 
-## Проекты и monitors
+## Regional Check Nodes
+
+Все owner-маршруты требуют cookie-сессию; изменяющие запросы проверяют `Origin`.
+
+### GET, POST /api/v1/check-nodes
+
+`GET` возвращает узлы владельца, их online-состояние и активные назначения. Узел считается online, если связывался с backend последние 2 минуты.
+
+`POST` принимает:
+
+```json
+{"name":"Frankfurt 1","region":"eu-central"}
+```
+
+Ответ `201` содержит `node.secret` только один раз. Код региона: 2–32 символа `[a-z0-9._-]`, первый символ — буква или цифра.
+
+### DELETE /api/v1/check-nodes/{nodeID}
+
+Безвозвратно отзывает credential и выключает назначения. Требует `X-Confirm-Revoke: true`. Повторное включение отозванного секрета невозможно.
+
+### POST /api/v1/check-nodes/{nodeID}/assignments
+
+```json
+{"monitor_id":"a3443497-a012-40a3-a3a3-74e7171d43ec"}
+```
+
+Назначаются только активные HTTP/TCP monitors того же владельца. Повтор отвечает `409 already_assigned`.
+
+### DELETE /api/v1/check-nodes/{nodeID}/assignments/{assignmentID}
+
+Выключает назначение; требует `X-Confirm-Delete: true`. После удаления последнего активного регионального назначения monitor снова доступен локальному scheduler.
+
+### GET /api/v1/monitoring/assignments
+
+Аутентификация: `Authorization: Bearer <node-secret>`. Возвращает до `limit` (максимум 100) просроченных заданий текущего узла. Каждое содержит assignment/monitor/project ID, регион, тип, URL или TCP target, интервал, таймаут и `leased_until`.
+
+### POST /api/v1/ingest/monitoring/results
+
+Аутентификация: bearer secret узла. Тело до 256 КиБ, batch 1–100:
+
+```json
+{
+  "results": [{
+    "result_id": "554f1140-21d8-4f83-aa18-e1243b3afce1",
+    "assignment_id": "20628d61-787e-4ed9-8a02-785e90259e10",
+    "monitor_id": "a3443497-a012-40a3-a3a3-74e7171d43ec",
+    "region": "eu-central",
+    "started_at": "2026-09-23T12:00:00Z",
+    "finished_at": "2026-09-23T12:00:00.125Z",
+    "available": true,
+    "status_code": 200,
+    "response_time_ms": 125,
+    "error_code": null
+  }]
+}
+```
+
+Ответ `202` содержит `accepted`, `duplicate`, `rejected` и `server_time`. Повтор `(node_id, result_id)` увеличивает `duplicate` и не удваивает историю; неверный элемент возвращается в `rejected` с кодом `invalid_result` или `invalid_assignment`, не блокируя остальной batch. Допустимые ошибки проверки: `request_timeout`, `dns_failure`, `connection_refused`, `tls_failure`, `blocked_target`, `connection_failed`, `unexpected_status`. Пустой batch или batch больше 100 элементов отвечает `422 invalid_result`.
+
+## Живой Dashboard
 
 ### GET /api/v1/events
 
@@ -228,6 +287,8 @@ data: {"projects":{"projects":[],"next_cursor":null},"incidents":[],"generated_a
 - временная ошибка снимка передаётся как `stream-error` без внутренних подробностей;
 - одновременно обслуживается до 50 потоков, превышение возвращает `429 stream_limit` до перехода в SSE;
 - каждый reconnect получает полный актуальный снимок, поэтому replay промежуточных событий не требуется.
+
+## Проекты и monitors
 
 Все маршруты управления требуют действующую cookie-сессию. Первый monitor создаётся вместе с проектом.
 

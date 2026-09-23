@@ -1,6 +1,6 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 import { APIError, api, basePath, mutate } from './api'
-import type { Check, Incident, Monitor, Notification, OpenIncident, Project, Summary, User, Webhook } from './types'
+import type { Check, CheckNode, Incident, Monitor, Notification, OpenIncident, Project, Summary, User, Webhook } from './types'
 
 type LiveState = 'connecting' | 'live' | 'polling'
 type Period = '24h' | '7d' | '30d'
@@ -127,7 +127,9 @@ export function App() {
     page = <NotificationsPage projectID={notificationsMatch[1]} projects={projects} />
   } else if (route === paths.settings) {
     page = <SettingsPage user={user} />
-  } else if ([paths.analytics, paths.events, paths.properties, paths.servers].includes(route)) {
+  } else if (route === paths.servers) {
+    page = <ServersPage projects={projects} />
+  } else if ([paths.analytics, paths.events, paths.properties].includes(route)) {
     page = <FuturePage path={route} />
   } else {
     page = <ProjectsPage projects={projects} incidents={incidents} refresh={refreshProjects} />
@@ -357,7 +359,7 @@ function MonitorPage({ projectID, monitorID, projects }: { projectID: string; mo
     {loading && !summary ? <LoadingState /> : summary && <>
       <section className="metric-grid"><Metric label="Статус" value={statusLabel(summary.status)} /><Metric label="Uptime" value={formatPercent(summary.uptime_percent)} /><Metric label="Покрытие" value={formatPercent(summary.coverage_percent)} /><Metric label="Среднее" value={summary.average_response_time_ms == null ? '—' : `${Math.round(summary.average_response_time_ms)} мс`} /><Metric label="Пик" value={summary.peak_response_time_ms == null ? '—' : `${summary.peak_response_time_ms} мс`} /></section>
       <section className="panel"><h2>Время ответа</h2><ResponseChart checks={checks} /></section>
-      <section className="panel"><h2>Проверки</h2><DataTable headers={['Время', 'Результат', 'Код', 'Ответ']} rows={checks.map((item) => [formatTime(item.checked_at, timezone), item.available ? 'Доступен' : item.error || 'Недоступен', item.status_code ?? '—', item.response_time_ms == null ? '—' : `${item.response_time_ms} мс`])} empty="За период нет проверок" />{checkCursor && <button className="button secondary small" onClick={() => void loadMoreChecks()}>Показать ещё</button>}</section>
+      <section className="panel"><h2>Проверки</h2><DataTable headers={['Время', 'Регион', 'Результат', 'Код', 'Ответ']} rows={checks.map((item) => [formatTime(item.checked_at, timezone), item.region || 'backend', item.available ? 'Доступен' : item.error || 'Недоступен', item.status_code ?? '—', item.response_time_ms == null ? '—' : `${item.response_time_ms} мс`])} empty="За период нет проверок" />{checkCursor && <button className="button secondary small" onClick={() => void loadMoreChecks()}>Показать ещё</button>}</section>
       <section className="panel"><h2>Инциденты</h2><DataTable headers={['Начало', 'Завершение', 'Длительность', 'Причина']} rows={incidents.map((item) => [formatTime(item.started_at, timezone), item.resolved_at ? formatTime(item.resolved_at, timezone) : 'Открыт', formatDuration(item.duration_seconds), item.cause || '—'])} empty="За период нет инцидентов" />{incidentCursor && <button className="button secondary small" onClick={() => void loadMoreIncidents()}>Показать ещё</button>}</section>
     </>}
   </>
@@ -407,12 +409,57 @@ function SettingsPage({ user }: { user: User }) {
   return <><PageHeader eyebrow="SETTINGS" title="Настройки" description="Параметры владельца и текущей установки." /><section className="panel settings-list"><div><span>Email владельца</span><strong>{user.email}</strong></div><div><span>Путь установки</span><strong>{basePath || '/'}</strong></div><div><span>Сессия</span><strong>HttpOnly cookie · 7 дней</strong></div><div><span>Обновления</span><strong>SSE с polling fallback</strong></div></section></>
 }
 
+function ServersPage({ projects }: { projects: Project[] }) {
+  const [nodes, setNodes] = useState<CheckNode[]>([])
+  const [secret, setSecret] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+  const monitors = projects.flatMap((project) => project.monitors.filter((monitor) => monitor.type !== 'heartbeat').map((monitor) => ({ project, monitor })))
+  const load = useCallback(async () => {
+    setLoading(true); setError('')
+    try { const result = await api<{ nodes: CheckNode[] }>('/check-nodes'); setNodes(result.nodes) }
+    catch (failure) { setError(messageOf(failure)) } finally { setLoading(false) }
+  }, [])
+  useEffect(() => { void load() }, [load])
+  async function create(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); const form = new FormData(event.currentTarget)
+    try { const result = await mutate<{ node: CheckNode }>('/check-nodes', 'POST', { name: form.get('name'), region: form.get('region') }); setSecret(result.node.secret || ''); event.currentTarget.reset(); await load() }
+    catch (failure) { setError(messageOf(failure)) }
+  }
+  async function assign(event: FormEvent<HTMLFormElement>, nodeID: string) {
+    event.preventDefault(); const form = new FormData(event.currentTarget)
+    try { await mutate(`/check-nodes/${nodeID}/assignments`, 'POST', { monitor_id: form.get('monitor_id') }); await load() }
+    catch (failure) { setError(messageOf(failure)) }
+  }
+  async function removeAssignment(nodeID: string, assignmentID: string) {
+    if (!confirm('Удалить назначение?')) return
+    try { await mutate(`/check-nodes/${nodeID}/assignments/${assignmentID}`, 'DELETE', undefined, { 'X-Confirm-Delete': 'true' }); await load() }
+    catch (failure) { setError(messageOf(failure)) }
+  }
+  async function revoke(node: CheckNode) {
+    if (!confirm(`Безвозвратно отозвать ключ узла «${node.name}»?`)) return
+    try { await mutate(`/check-nodes/${node.id}`, 'DELETE', undefined, { 'X-Confirm-Revoke': 'true' }); await load() }
+    catch (failure) { setError(messageOf(failure)) }
+  }
+  return <>
+    <PageHeader eyebrow="REGIONAL CHECK NODES" title="Серверы" description="Отзываемые узлы выполняют HTTP/TCP-проверки из разных регионов без доступа к PostgreSQL." />
+    {secret && <SecretBox title="Сохраните CHECK_NODE_SECRET — он показывается один раз" value={secret} onClose={() => setSecret('')} />}
+    {error && <ErrorState>{error}</ErrorState>}
+    <section className="panel"><h2>Зарегистрировать узел</h2><form className="inline-form" onSubmit={create}><label>Название<input name="name" required maxLength={100} placeholder="Frankfurt 1" /></label><label>Код региона<input name="region" required pattern="[a-z0-9][a-z0-9._-]{1,31}" placeholder="eu-central" /></label><button className="button primary">Создать ключ</button></form></section>
+    {loading ? <LoadingState /> : !nodes.length ? <EmptyState title="Региональных узлов нет">Создайте ключ, запустите бинарник check-node и назначьте monitors.</EmptyState> : nodes.map((node) => <section className="panel" key={node.id}>
+      <div className="section-heading"><div><p className="eyebrow">{node.region}</p><h2>{node.name}</h2><p className="muted">{node.revoked_at ? `Отозван ${formatTime(node.revoked_at)}` : node.online ? `Онлайн · контакт ${formatTime(node.last_seen_at)}` : `Нет связи · последний контакт ${formatTime(node.last_seen_at)}`}</p></div><StatusBadge state={node.revoked_at ? 'down' : node.online ? 'up' : 'pending'} /></div>
+      {!node.revoked_at && <form className="inline-form" onSubmit={(event) => void assign(event, node.id)}><label>Назначить monitor<select name="monitor_id" required defaultValue=""><option value="" disabled>Выберите monitor</option>{monitors.map(({ project, monitor }) => <option key={monitor.id} value={monitor.id}>{project.name} · {monitor.name}</option>)}</select></label><button className="button secondary">Назначить</button></form>}
+      <DataTable headers={['Проект', 'Monitor', 'Тип', 'Последний результат', '']} rows={node.assignments.map((item) => [item.project_name, item.monitor_name, item.type.toUpperCase(), formatTime(item.last_result_at), <button className="text-button danger-text" onClick={() => void removeAssignment(node.id, item.id)}>Удалить</button>])} empty="Узлу не назначены monitors" />
+      {!node.revoked_at && <button className="button danger small" onClick={() => void revoke(node)}>Отозвать ключ узла</button>}
+    </section>)}
+  </>
+}
+
 function FuturePage({ path }: { path: string }) {
   const content: Record<string, [string, string]> = {
     [paths.analytics]: ['Аналитика', 'Посещаемость, источники и производительность появятся после подключения Analytics API.'],
     [paths.events]: ['События', 'Custom events и их временная шкала будут подключены к реальным данным на следующих этапах.'],
     [paths.properties]: ['Свойства', 'Управление схемой custom properties подготовлено как отдельный раздел.'],
-    [paths.servers]: ['Серверы', 'Региональные узлы и Server Agent будут отображаться здесь после регистрации.'],
   }
   const [title, description] = content[path]
   return <><PageHeader eyebrow="COMING NEXT" title={title} description={description} /><EmptyState title="Раздел подготовлен">Навигация и доступный пустой экран готовы; данные появятся вместе с соответствующим backend API.</EmptyState></>
@@ -435,7 +482,7 @@ function DataTable({ headers, rows, empty }: { headers: string[]; rows: ReactNod
 }
 
 function ResponseChart({ checks }: { checks: Check[] }) {
-  const points = checks.filter((item) => item.response_time_ms != null).slice().reverse()
+  const points = checks.filter((item) => item.response_time_ms != null && (!item.region || item.region === 'global')).slice().reverse()
   if (!points.length) return <p className="muted">Нет данных response time.</p>
   const width = 900, height = 220, pad = 22
   const max = Math.max(...points.map((item) => item.response_time_ms || 0), 1)

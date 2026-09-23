@@ -85,6 +85,8 @@ cd ..
 
 `npm run check` выполняет проверку TypeScript без сборки. Dockerfile выполняет `npm ci` и `npm run build` автоматически в отдельном Node.js build stage.
 
+Отдельный региональный узел собирается командой `go build -o check-node ./cmd/check-node`; его регистрация и установка описаны в [CHECK_NODE.md](CHECK_NODE.md).
+
 Из корня проекта:
 
 ```bash

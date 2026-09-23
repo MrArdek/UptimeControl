@@ -182,3 +182,16 @@ go build ./...
 ```
 
 TypeScript проверен, Vite build воспроизводится из lockfile, npm audit не нашёл известных уязвимостей. Production bundle: JavaScript 247,66 КБ / 76,65 КБ gzip, CSS 9,72 КБ / 2,99 КБ gzip. Go-тесты проверяют runtime `BASE_PATH`, refresh вложенного маршрута, раздачу hashed asset, строгую CSP и `404` для отсутствующего API.
+
+## Проверка этапа 12 — 2026-09-23
+
+```bash
+go test ./...
+go test -race ./...
+go vet ./...
+go build ./...
+go build -o /tmp/uptime-check-node ./cmd/check-node
+cd web && npm ci && npm run check && npm run build && npm audit --audit-level=high
+```
+
+Unit-тесты проверяют одноразовый node secret и хеш, валидацию региона/времени/UUID, повтор result ID внутри batch, bearer-защиту HTTP API, контракт счётчиков ingest, обязательный HTTPS и восстановление дискового буфера. Полный PostgreSQL ingest и миграция `000007` требуют `TEST_DATABASE_URL`; в текущей среде PostgreSQL и Docker не установлены. Географическая приёмка требует предоставленных владельцем серверов в разных регионах.

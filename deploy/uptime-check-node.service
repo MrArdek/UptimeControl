@@ -1,0 +1,28 @@
+[Unit]
+Description=Uptime Control regional check node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+StateDirectory=uptime-check-node
+WorkingDirectory=/var/lib/uptime-check-node
+EnvironmentFile=/etc/uptime-control/check-node.env
+ExecStart=/opt/uptime-control/check-node
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

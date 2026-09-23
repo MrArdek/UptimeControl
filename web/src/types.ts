@@ -34,6 +34,9 @@ export type Check = {
   status_code: number | null
   response_time_ms: number | null
   error: string | null
+  node_id?: string
+  region?: string
+  result_id?: string
 }
 
 export type Incident = {
@@ -91,4 +94,28 @@ export type Notification = {
   last_error: string | null
   occurred_at: string
   attempt_history: NotificationAttempt[]
+}
+
+export type NodeAssignment = {
+  id: string
+  node_id: string
+  monitor_id: string
+  project_id: string
+  project_name: string
+  monitor_name: string
+  type: string
+  region: string
+  last_result_at: string | null
+}
+
+export type CheckNode = {
+  id: string
+  name: string
+  region: string
+  enabled: boolean
+  online: boolean
+  last_seen_at: string | null
+  revoked_at: string | null
+  secret?: string
+  assignments: NodeAssignment[]
 }

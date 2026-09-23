@@ -36,11 +36,17 @@
 | GET | `/api/v1/projects/{projectID}/notifications` | Пагинированный журнал доставки | Владелец | Проект сначала проверяется по `id` + `user_id`; курсор привязан к владельцу и проекту |
 | POST | `/api/v1/projects/{projectID}/notifications/test` | Пробная асинхронная доставка | Владелец | Cookie, Origin, project owner; создаёт событие без инцидента |
 | POST | `/api/v1/projects/{projectID}/notifications/{notificationID}/retry` | Повтор окончательно неудачной доставки | Владелец | Cookie, Origin, project/event owner, только `failed`, `X-Confirm-Retry: true` |
+| GET/POST | `/api/v1/check-nodes` | Список и регистрация региональных узлов | Владелец | Cookie; Origin для POST; сырой secret только в `201` |
+| DELETE | `/api/v1/check-nodes/{nodeID}` | Отзыв узла | Владелец | Cookie, Origin, owner в SQL, `X-Confirm-Revoke: true` |
+| POST/DELETE | `/api/v1/check-nodes/{nodeID}/assignments/*` | Назначение HTTP/TCP monitors | Владелец | Cookie, Origin, node и monitor одного владельца, подтверждение удаления |
+| GET | `/api/v1/monitoring/assignments` | Аренда заданий узлом | Региональный узел | Bearer secret hash, только собственные назначения, `SKIP LOCKED`, limit 100 |
+| POST | `/api/v1/ingest/monitoring/results` | Идемпотентный batch результатов | Региональный узел | Bearer secret hash, assignment/node/monitor scope, ≤256 КиБ и 100 результатов |
 
 ## Реализованные роли
 
 - Неавторизованный посетитель.
 - Авторизованный пользователь.
+- Региональный check node с индивидуальным отзываемым credential и доступом только к Monitoring API.
 
 ## Предварительная модель доступа
 

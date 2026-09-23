@@ -9,14 +9,15 @@ import (
 var ErrNotFound = errors.New("monitor not found")
 
 type DueMonitor struct {
-	ID             string
-	ProjectID      string
-	ProjectName    string
-	Name           string
-	Type           string
-	URL            string
-	Target         string
-	TimeoutSeconds int
+	ID                   string
+	ProjectID            string
+	ProjectName          string
+	Name                 string
+	Type                 string
+	URL                  string
+	Target               string
+	CheckIntervalSeconds int
+	TimeoutSeconds       int
 }
 
 type Result struct {
@@ -28,12 +29,17 @@ type Result struct {
 }
 
 type Check struct {
-	ID             int64     `json:"id"`
-	CheckedAt      time.Time `json:"checked_at"`
-	Available      bool      `json:"available"`
-	StatusCode     *int      `json:"status_code"`
-	ResponseTimeMS *int64    `json:"response_time_ms"`
-	Error          *string   `json:"error"`
+	ID             int64      `json:"id"`
+	CheckedAt      time.Time  `json:"checked_at"`
+	StartedAt      *time.Time `json:"started_at,omitempty"`
+	Available      bool       `json:"available"`
+	StatusCode     *int       `json:"status_code"`
+	ResponseTimeMS *int64     `json:"response_time_ms"`
+	Error          *string    `json:"error"`
+	NodeID         *string    `json:"node_id,omitempty"`
+	AssignmentID   *string    `json:"assignment_id,omitempty"`
+	ResultID       *string    `json:"result_id,omitempty"`
+	Region         *string    `json:"region,omitempty"`
 }
 
 type Incident struct {

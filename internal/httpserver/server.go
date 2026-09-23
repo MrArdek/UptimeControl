@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/MrArdek/UptimeControl/internal/auth"
+	"github.com/MrArdek/UptimeControl/internal/checknodes"
 	"github.com/MrArdek/UptimeControl/internal/sites"
 )
 
@@ -59,6 +60,7 @@ func NewApplication(
 	projectManagement projectService,
 	history historyService,
 	heartbeats heartbeatService,
+	nodes *checknodes.Service,
 	options Options,
 ) *http.Server {
 	return newServer(address, newApplicationHandler(
@@ -68,6 +70,7 @@ func NewApplication(
 		projectManagement,
 		history,
 		heartbeats,
+		nodes,
 		options,
 	))
 }
@@ -94,7 +97,7 @@ func newHandler(
 	siteManagement siteService,
 	options Options,
 ) http.Handler {
-	return newApplicationHandler(database, authentication, siteManagement, nil, nil, nil, options)
+	return newApplicationHandler(database, authentication, siteManagement, nil, nil, nil, nil, options)
 }
 
 func newApplicationHandler(
@@ -104,6 +107,7 @@ func newApplicationHandler(
 	projectManagement projectService,
 	history historyService,
 	heartbeats heartbeatService,
+	nodes checkNodeService,
 	options Options,
 ) http.Handler {
 	mux := http.NewServeMux()
@@ -130,6 +134,13 @@ func newApplicationHandler(
 	}
 	if heartbeats != nil {
 		mux.HandleFunc(routePath(options.BasePath, "/api/v1/heartbeat/"), heartbeatHandler(heartbeats, options.BasePath))
+	}
+	if nodes != nil {
+		nodeHandlers := newCheckNodeHandlers(authentication, nodes, options)
+		mux.HandleFunc(routePath(options.BasePath, "/api/v1/check-nodes"), nodeHandlers.collection)
+		mux.HandleFunc(routePath(options.BasePath, "/api/v1/check-nodes/"), nodeHandlers.item)
+		mux.HandleFunc(routePath(options.BasePath, "/api/v1/monitoring/assignments"), nodeHandlers.assignments)
+		mux.HandleFunc(routePath(options.BasePath, "/api/v1/ingest/monitoring/results"), nodeHandlers.results)
 	}
 	registerDashboard(mux, options.BasePath)
 

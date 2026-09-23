@@ -1,11 +1,12 @@
 # Карта проекта
 
-Дата актуализации: 2026-09-14
+Дата актуализации: 2026-09-23
 
 ## Текущее дерево
 
 ```text
 UptimeControl/
+├── cmd/check-node/          # отдельный региональный исполнитель
 ├── web/
 │   ├── src/
 │   │   ├── App.tsx
@@ -22,6 +23,7 @@ UptimeControl/
 │   ├── API.md
 │   ├── AI_WORKLOG.md
 │   ├── BACKUP.md
+│   ├── CHECK_NODE.md
 │   ├── DATABASE.md
 │   ├── DATA_CONTRACTS.md
 │   ├── DECISIONS.md
@@ -47,11 +49,16 @@ UptimeControl/
 │   ├── config/
 │   │   ├── config.go
 │   │   └── config_test.go
+│   ├── checknodes/
+│   │   ├── checknodes.go
+│   │   ├── checknodes_test.go
+│   │   └── postgres_store.go
 │   ├── httpserver/
 │   │   ├── auth_handlers.go
 │   │   ├── auth_handlers_test.go
 │   │   ├── dashboard.go
 │   │   ├── heartbeat_handler.go
+│   │   ├── check_node_handlers.go
 │   │   ├── live_events.go
 │   │   ├── live_events_test.go
 │   │   ├── project_handlers.go
@@ -74,6 +81,7 @@ UptimeControl/
 │   │   │   ├── 000004_project_webhooks.up.sql
 │   │   │   ├── 000005_tcp_monitors.up.sql
 │   │   │   ├── 000006_notification_queue.up.sql
+│   │   │   ├── 000007_regional_check_nodes.up.sql
 │   │   │   └── README.md
 │   │   └── migrations.go
 │   ├── monitoring/
@@ -112,8 +120,11 @@ UptimeControl/
 ├── .gitignore
 ├── compose.yaml
 ├── Dockerfile
+├── Dockerfile.check-node
 ├── deploy/
+│   ├── check-node.env.example
 │   ├── compose.env.example
+│   ├── uptime-check-node.service
 │   └── uptime-control.service
 ├── go.mod
 ├── go.sum
@@ -153,6 +164,10 @@ UptimeControl/
 ### `/internal/monitoring`
 
 Планировщик заданий, безопасные HTTP/TCP checkers, пагинированная история, расчёт uptime/coverage, запись инцидентов и приём heartbeat. Постоянная очередь отдельно доставляет Telegram и HMAC-webhooks с арендой, retry и журналом попыток.
+
+### `/internal/checknodes` и `/cmd/check-node`
+
+Backend-регистрация, отзыв, назначения, аренда и дедупликация региональных результатов находятся в `internal/checknodes`. `cmd/check-node` — отдельный исполнитель с теми же безопасными checkers, HTTPS-клиентом, health endpoint и ограниченным дисковым буфером.
 
 ### `/internal/netpolicy`
 
@@ -221,6 +236,7 @@ UptimeControl/
 - `SERVER_INSTALL.md` — установка и безопасный запуск на тестовом Linux-сервере.
 - `SECURITY.md` — правила безопасной разработки.
 - `AI_WORKLOG.md` — журнал значимых изменений, выполненных AI.
+- `CHECK_NODE.md` — регистрация, конфигурация и установка регионального узла.
 - `PROJECT_MAP.md` — этот файл, карта структуры проекта.
 - `SETUP.md` — установка, настройка, запуск и проверка.
 - `VERIFICATION.md` — актуальные команды проверки и результаты последнего прогона.

@@ -39,6 +39,12 @@ func (store *PostgresStore) ClaimDue(ctx context.Context, now time.Time, limit i
 			  AND monitors.deleted_at IS NULL
 			  AND projects.deleted_at IS NULL
 			  AND monitors.next_check_at <= $1
+			  AND NOT EXISTS (
+				SELECT 1 FROM monitor_assignments ma
+				JOIN check_nodes cn ON cn.id = ma.node_id
+				WHERE ma.monitor_id = monitors.id AND ma.enabled = true
+				  AND cn.enabled = true AND cn.revoked_at IS NULL
+			  )
 			ORDER BY monitors.next_check_at, monitors.id
 			FOR UPDATE OF monitors SKIP LOCKED
 			LIMIT $2
@@ -50,7 +56,8 @@ func (store *PostgresStore) ClaimDue(ctx context.Context, now time.Time, limit i
 		WHERE monitors.id = due.id
 		  AND projects.id = monitors.project_id
 		RETURNING monitors.id, monitors.project_id, projects.name, monitors.name,
-		          monitors.type, monitors.url, monitors.target, monitors.timeout_seconds
+		          monitors.type, monitors.url, monitors.target,
+		          monitors.check_interval_seconds, monitors.timeout_seconds
 	`, now, limit)
 	if err != nil {
 		return nil, fmt.Errorf("claim due monitors: %w", err)
@@ -68,6 +75,7 @@ func (store *PostgresStore) ClaimDue(ctx context.Context, now time.Time, limit i
 			&monitor.Type,
 			&monitor.URL,
 			&monitor.Target,
+			&monitor.CheckIntervalSeconds,
 			&monitor.TimeoutSeconds,
 		); err != nil {
 			return nil, fmt.Errorf("scan due monitor: %w", err)
@@ -115,7 +123,8 @@ func (store *PostgresStore) RecordHeartbeat(
 	var monitor DueMonitor
 	err = transaction.QueryRow(ctx, `
 		SELECT monitors.id, monitors.project_id, projects.name, monitors.name,
-		       monitors.type, monitors.url, monitors.target, monitors.timeout_seconds
+		       monitors.type, monitors.url, monitors.target,
+		       monitors.check_interval_seconds, monitors.timeout_seconds
 		FROM monitors
 		JOIN projects ON projects.id = monitors.project_id
 		WHERE monitors.heartbeat_token_hash = $1
@@ -132,6 +141,7 @@ func (store *PostgresStore) RecordHeartbeat(
 		&monitor.Type,
 		&monitor.URL,
 		&monitor.Target,
+		&monitor.CheckIntervalSeconds,
 		&monitor.TimeoutSeconds,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -171,7 +181,9 @@ func (store *PostgresStore) Checks(
 	limit = normalizeLimit(limit)
 	rows, err := store.database.Query(ctx, `
 		SELECT uptime_checks.id, uptime_checks.checked_at, uptime_checks.available,
-		       uptime_checks.status_code, uptime_checks.response_time_ms, uptime_checks.error_message
+		       uptime_checks.status_code, uptime_checks.response_time_ms, uptime_checks.error_message,
+		       uptime_checks.node_id, uptime_checks.assignment_id, uptime_checks.result_id,
+		       uptime_checks.region, uptime_checks.started_at
 		FROM uptime_checks
 		JOIN monitors ON monitors.id = uptime_checks.monitor_id
 		JOIN projects ON projects.id = monitors.project_id
@@ -201,10 +213,19 @@ func (store *PostgresStore) Checks(
 			&statusCode,
 			&responseTime,
 			&errorMessage,
+			&check.NodeID,
+			&check.AssignmentID,
+			&check.ResultID,
+			&check.Region,
+			&check.StartedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan check: %w", err)
 		}
 		check.CheckedAt = check.CheckedAt.UTC()
+		if check.StartedAt != nil {
+			value := check.StartedAt.UTC()
+			check.StartedAt = &value
+		}
 		if statusCode.Valid {
 			value := int(statusCode.Int32)
 			check.StatusCode = &value
@@ -286,7 +307,9 @@ func (store *PostgresStore) CheckPage(
 	arguments := []any{userID, projectID, monitorID, query.From, query.To}
 	statement := `
 		SELECT uptime_checks.id, uptime_checks.checked_at, uptime_checks.available,
-		       uptime_checks.status_code, uptime_checks.response_time_ms, uptime_checks.error_message
+		       uptime_checks.status_code, uptime_checks.response_time_ms, uptime_checks.error_message,
+		       uptime_checks.node_id, uptime_checks.assignment_id, uptime_checks.result_id,
+		       uptime_checks.region, uptime_checks.started_at
 		FROM uptime_checks
 		JOIN monitors ON monitors.id = uptime_checks.monitor_id
 		JOIN projects ON projects.id = monitors.project_id
@@ -451,25 +474,32 @@ func (store *PostgresStore) summaryChecks(
 	rows, err := store.database.Query(ctx, `
 		WITH selected AS (
 			(SELECT uptime_checks.id, uptime_checks.checked_at, uptime_checks.available,
-			        uptime_checks.status_code, uptime_checks.response_time_ms, uptime_checks.error_message
+			        uptime_checks.status_code, uptime_checks.response_time_ms, uptime_checks.error_message,
+			        uptime_checks.node_id, uptime_checks.assignment_id, uptime_checks.result_id,
+			        uptime_checks.region, uptime_checks.started_at
 			 FROM uptime_checks
 			 JOIN monitors ON monitors.id = uptime_checks.monitor_id
 			 JOIN projects ON projects.id = monitors.project_id
 			 WHERE projects.user_id = $1 AND projects.id = $2 AND monitors.id = $3
 			   AND projects.deleted_at IS NULL AND monitors.deleted_at IS NULL
+			   AND uptime_checks.node_id IS NULL
 			   AND uptime_checks.checked_at < $4
 			 ORDER BY uptime_checks.checked_at DESC, uptime_checks.id DESC LIMIT 1)
 			UNION ALL
 			(SELECT uptime_checks.id, uptime_checks.checked_at, uptime_checks.available,
-			        uptime_checks.status_code, uptime_checks.response_time_ms, uptime_checks.error_message
+			        uptime_checks.status_code, uptime_checks.response_time_ms, uptime_checks.error_message,
+			        uptime_checks.node_id, uptime_checks.assignment_id, uptime_checks.result_id,
+			        uptime_checks.region, uptime_checks.started_at
 			 FROM uptime_checks
 			 JOIN monitors ON monitors.id = uptime_checks.monitor_id
 			 JOIN projects ON projects.id = monitors.project_id
 			 WHERE projects.user_id = $1 AND projects.id = $2 AND monitors.id = $3
 			   AND projects.deleted_at IS NULL AND monitors.deleted_at IS NULL
+			   AND uptime_checks.node_id IS NULL
 			   AND uptime_checks.checked_at >= $4 AND uptime_checks.checked_at < $5)
 		)
-		SELECT id, checked_at, available, status_code, response_time_ms, error_message
+		SELECT id, checked_at, available, status_code, response_time_ms, error_message,
+		       node_id, assignment_id, result_id, region, started_at
 		FROM selected ORDER BY checked_at, id
 	`, userID, projectID, monitorID, query.From, query.To)
 	if err != nil {
@@ -522,10 +552,17 @@ func scanCheck(row rowScanner) (Check, error) {
 	var statusCode pgtype.Int4
 	var responseTime pgtype.Int8
 	var errorMessage pgtype.Text
-	if err := row.Scan(&check.ID, &check.CheckedAt, &check.Available, &statusCode, &responseTime, &errorMessage); err != nil {
+	if err := row.Scan(
+		&check.ID, &check.CheckedAt, &check.Available, &statusCode, &responseTime, &errorMessage,
+		&check.NodeID, &check.AssignmentID, &check.ResultID, &check.Region, &check.StartedAt,
+	); err != nil {
 		return Check{}, err
 	}
 	check.CheckedAt = check.CheckedAt.UTC()
+	if check.StartedAt != nil {
+		value := check.StartedAt.UTC()
+		check.StartedAt = &value
+	}
 	if statusCode.Valid {
 		value := int(statusCode.Int32)
 		check.StatusCode = &value
@@ -584,6 +621,25 @@ func recordResult(
 	monitor DueMonitor,
 	result Result,
 ) (Transition, error) {
+	return recordResultWithHistory(ctx, executor, monitor, result, true, nil)
+}
+
+// RecordRegionalState applies a quorum decision inside the caller's transaction.
+// The raw per-region sample is already stored by the check-node ingest path; this
+// function records a separate global sample so summaries retain quorum semantics.
+func RecordRegionalState(ctx context.Context, transaction pgx.Tx, monitor DueMonitor, result Result) (Transition, error) {
+	region := "global"
+	return recordResultWithHistory(ctx, transaction, monitor, result, true, &region)
+}
+
+func recordResultWithHistory(
+	ctx context.Context,
+	executor resultExecutor,
+	monitor DueMonitor,
+	result Result,
+	insertHistory bool,
+	historyRegion *string,
+) (Transition, error) {
 	errorMessage := optionalError(result.Error)
 	commandTag, err := executor.Exec(ctx, `
 		UPDATE monitors
@@ -602,13 +658,15 @@ func recordResult(
 		// The owner may have deleted the monitor while a check was running.
 		return Transition{}, nil
 	}
-	if _, err := executor.Exec(ctx, `
-		INSERT INTO uptime_checks (
-			monitor_id, checked_at, available, status_code, response_time_ms, error_message
-		)
-		VALUES ($1, $2, $3, $4, $5, $6)
-	`, monitor.ID, result.CheckedAt, result.Available, optionalInt(result.StatusCode), optionalInt64(result.ResponseTimeMS), errorMessage); err != nil {
-		return Transition{}, fmt.Errorf("insert uptime check: %w", err)
+	if insertHistory {
+		if _, err := executor.Exec(ctx, `
+			INSERT INTO uptime_checks (
+				monitor_id, checked_at, available, status_code, response_time_ms, error_message, region
+			)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)
+		`, monitor.ID, result.CheckedAt, result.Available, optionalInt(result.StatusCode), optionalInt64(result.ResponseTimeMS), errorMessage, historyRegion); err != nil {
+			return Transition{}, fmt.Errorf("insert uptime check: %w", err)
+		}
 	}
 
 	transition := Transition{

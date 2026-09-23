@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/MrArdek/UptimeControl/internal/auth"
+	"github.com/MrArdek/UptimeControl/internal/checknodes"
 	"github.com/MrArdek/UptimeControl/internal/config"
 	"github.com/MrArdek/UptimeControl/internal/httpserver"
 	"github.com/MrArdek/UptimeControl/internal/migrations"
@@ -58,6 +59,7 @@ func run() error {
 	projectStore := projects.NewPostgresStore(database)
 	projectManagement := projects.NewService(projectStore)
 	monitorStore := monitoring.NewPostgresStore(database)
+	checkNodeManagement := checknodes.NewService(checknodes.NewPostgresStore(database))
 	notifiers := make([]monitoring.Notifier, 0, 2)
 	if cfg.TelegramBotToken != "" {
 		notifiers = append(notifiers, monitoring.NewTelegramNotifier(cfg.TelegramBotToken, cfg.TelegramChatID))
@@ -94,6 +96,7 @@ func run() error {
 		projectManagement,
 		monitorStore,
 		scheduler,
+		checkNodeManagement,
 		httpserver.Options{
 			AllowedOrigin: cfg.PublicOrigin,
 			BasePath:      cfg.BasePath,

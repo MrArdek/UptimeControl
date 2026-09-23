@@ -85,7 +85,7 @@ user
 
 ### Monitoring API
 
-Планируемый маршрут: `POST /api/v1/ingest/monitoring/results`.
+Реализованный маршрут: `POST /api/v1/ingest/monitoring/results`; задания выдаются через `GET /api/v1/monitoring/assignments`.
 
 Авторизация: `Authorization: Bearer <node-secret>`. Один batch относится к одному региональному узлу. Элемент содержит `result_id`, `assignment_id`, `monitor_id`, `region`, `started_at`, `finished_at`, `available`, необязательные `status_code`, `response_time_ms` и нормализованный `error_code`. Произвольный текст сетевой ошибки не принимается как метка высокой кардинальности.
 
