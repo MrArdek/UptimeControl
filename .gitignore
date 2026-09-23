@@ -25,6 +25,9 @@ profile.cov
 node_modules/
 web/node_modules/
 web/.vite/
+web/*.tsbuildinfo
+web/vite.config.js
+web/vite.config.d.ts
 
 # Go workspace file
 go.work
