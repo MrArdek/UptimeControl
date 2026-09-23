@@ -1,12 +1,13 @@
 # Запуск проекта
 
-Дата актуализации: 2026-09-06
+Дата актуализации: 2026-09-23
 
 ## Требования
 
 - Go 1.27 или новее в пределах совместимости проекта.
 - PostgreSQL версии 14–18.
 - Свободный TCP-порт, по умолчанию `8080`.
+- Node.js 20.19+ и npm нужны только для изменения и пересборки frontend. В production Node.js не запускается.
 
 Проект проверен на Go 1.27.1 и PostgreSQL 18.6.
 
@@ -73,6 +74,17 @@ DATABASE_URL=postgresql://localhost/uptime_control SESSION_COOKIE_SECURE=false g
 
 ## Запуск
 
+Готовая frontend-сборка хранится в `internal/httpserver/static/dist` и встраивается в Go. После изменения файлов в `web/` её нужно воспроизвести:
+
+```bash
+cd web
+npm ci
+npm run build
+cd ..
+```
+
+`npm run check` выполняет проверку TypeScript без сборки. Dockerfile выполняет `npm ci` и `npm run build` автоматически в отдельном Node.js build stage.
+
 Из корня проекта:
 
 ```bash
@@ -106,6 +118,7 @@ curl -i http://localhost:8080/ready
 go test ./...
 go test -race ./...
 go vet ./...
+cd web && npm ci && npm run check && npm run build && npm audit --audit-level=high
 ```
 
 ## Сборка

@@ -21,6 +21,11 @@ profile.cov
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
+# Frontend dependencies and local Vite cache
+node_modules/
+web/node_modules/
+web/.vite/
+
 # Go workspace file
 go.work
 go.work.sum

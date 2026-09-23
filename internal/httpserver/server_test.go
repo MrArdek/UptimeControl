@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -99,6 +101,47 @@ func TestDashboardIsServedUnderBasePath(t *testing.T) {
 	}
 	if response.Header().Get("Content-Security-Policy") == "" {
 		t.Fatal("dashboard response has no Content-Security-Policy")
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, `content="/uptimec"`) || !strings.Contains(body, `href="/uptimec/"`) {
+		t.Fatalf("dashboard does not contain runtime base path: %s", body)
+	}
+	if strings.Contains(response.Header().Get("Content-Security-Policy"), "unsafe-inline") {
+		t.Fatal("dashboard CSP permits inline scripts or styles")
+	}
+}
+
+func TestDashboardSupportsNestedRoutesAndAssets(t *testing.T) {
+	handler := newHandler(stubDatabase{}, stubAuthService{}, stubSiteService{}, Options{BasePath: "/uptimec"})
+
+	nested := httptest.NewRecorder()
+	handler.ServeHTTP(nested, httptest.NewRequest(http.MethodGet, "/uptimec/projects/00000000-0000-4000-8000-000000000001/monitors/00000000-0000-4000-8000-000000000002", nil))
+	if nested.Code != http.StatusOK || !strings.Contains(nested.Body.String(), `<div id="root"></div>`) {
+		t.Fatalf("nested route status = %d, body = %q", nested.Code, nested.Body.String())
+	}
+
+	index := nested.Body.String()
+	assetStart := strings.Index(index, `src="./assets/`)
+	if assetStart < 0 {
+		t.Fatal("dashboard bundle asset was not found")
+	}
+	assetStart += len(`src=".`)
+	assetEnd := strings.Index(index[assetStart:], `"`)
+	assetPath := "/uptimec" + index[assetStart:assetStart+assetEnd]
+	asset := httptest.NewRecorder()
+	handler.ServeHTTP(asset, httptest.NewRequest(http.MethodGet, assetPath, nil))
+	if asset.Code != http.StatusOK || asset.Header().Get("Cache-Control") != "public, max-age=31536000, immutable" {
+		t.Fatalf("asset status = %d, cache = %q", asset.Code, asset.Header().Get("Cache-Control"))
+	}
+	assetBody, err := io.ReadAll(asset.Body)
+	if err != nil || len(assetBody) == 0 {
+		t.Fatal("asset body is empty")
+	}
+
+	missingAPI := httptest.NewRecorder()
+	handler.ServeHTTP(missingAPI, httptest.NewRequest(http.MethodGet, "/uptimec/api/v1/missing", nil))
+	if missingAPI.Code != http.StatusNotFound {
+		t.Fatalf("missing API status = %d, want 404", missingAPI.Code)
 	}
 }
 

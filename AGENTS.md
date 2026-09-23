@@ -1,6 +1,6 @@
 # UptimeControl — инструкции для агента
 
-Self-hosted мониторинг проектов: Go 1.27 (только stdlib `net/http`) + PostgreSQL 14–18. Зависимости: только `pgx/v5` и `x/crypto`.
+Self-hosted мониторинг проектов: Go 1.27 (только stdlib `net/http`) + PostgreSQL 14–18 + встроенный React/TypeScript frontend. Go-зависимости: только `pgx/v5` и `x/crypto`; разрешённый frontend-набор зафиксирован в `web/package-lock.json`.
 
 ## Документация — источник правды в `docs/`
 
@@ -27,7 +27,8 @@ Self-hosted мониторинг проектов: Go 1.27 (только stdlib 
 Поток в `main.go`: `config.Load → postgres.Open → migrations.Up → services → Scheduler.Run (goroutine) → httpserver.NewApplication`. Graceful shutdown — 10 с на `SIGINT/SIGTERM`.
 
 - `internal/config` — env: `HTTP_ADDR` (default `:8080`), обязательный `DATABASE_URL`, `PUBLIC_ORIGIN` (только scheme+host, без пути), `BASE_PATH` (например `/uptimec`, пусто = корень), `SESSION_COOKIE_SECURE` (default `true`, `false` только для локального HTTP), `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` только парой. `.env` автоматически не загружается.
-- `internal/httpserver` — все маршруты строятся через `routePath(BASE_PATH, ...)`: `GET /health`, `GET /ready` (2 с таймаут, `503` без БД), `/api/v1/auth/*`, `/api/v1/projects/*`, `/api/v1/heartbeat/*`, авторизованный SSE `/api/v1/events`, встроенный Dashboard из `static/index.html` (без Node.js).
+- `internal/httpserver` — все маршруты строятся через `routePath(BASE_PATH, ...)`: `GET /health`, `GET /ready` (2 с таймаут, `503` без БД), `/api/v1/auth/*`, `/api/v1/projects/*`, `/api/v1/heartbeat/*`, авторизованный SSE `/api/v1/events`, встроенный React Dashboard из `static/dist`.
+- `web` — исходники React + TypeScript + Vite. Node.js нужен только для разработки/build; `npm ci && npm run build` выпускает assets в `internal/httpserver/static/dist`, production остаётся одним Go-процессом.
 - `internal/auth` — email+пароль (Argon2id, 12 символов–128 байт), сессия 7 дней в `HttpOnly; SameSite=Lax` cookie `uptime_session`. В БД только SHA-256-хеш токена. Первый пользователь = владелец, дальше `registration_closed`. Rate-limit in-memory на процесс: register 5/мин, login 10/мин с IP.
 - `internal/projects` — актуальная модель: проект-контейнер (сайт/API/игра/бот) + monitors `http` / `tcp` / `heartbeat`. Удаление мягкое (`deleted_at`), требует заголовка `X-Confirm-Delete: true`. Список использует cursor pagination.
 - `internal/monitoring` — планировщик проверок и отдельный worker постоянной очереди уведомлений через `FOR UPDATE SKIP LOCKED`; безопасные HTTP/TCP-checkers, heartbeat, история/сводки, Telegram и HMAC-webhooks. Переход инцидента и notification event фиксируются транзакционно; доставка at-least-once с `EventID`, 8 попытками и минутной арендой.
@@ -50,6 +51,8 @@ curl -i http://localhost:8080/ready
 ## ЗАПРЕЩЕНО без явного разрешения пользователя
 
 Добавлять зависимости — запрещено без явного разрешения пользователя. Это касается Go-библиотек, внешних сервисов, runtime-компонентов, новых языков. Перед любым таким шагом нужен GitHub issue (назначение, альтернативы, лицензия, влияние на размер/обновления, риски безопасности) — см. `docs/DECISIONS.md`, `docs/SECURITY.md`. Молчание ≠ согласие: спрашивать и ждать ответа.
+
+Исключение, явно данное владельцем 2026-09-23: для уже описанного в `docs/FRONTEND.md` набора React + TypeScript + Vite разрешено работать без GitHub issue. Это исключение не распространяется на дополнительные frontend-пакеты.
 
 Дополнительно без отдельного решения нельзя: править применённые миграции, класть секреты (`DATABASE_URL`, токены, heartbeat-токены) в код/логи/docs/Git, логировать пароли/cookie/строки подключения, отключать авторизацию или SSRF-проверки «для упрощения».
 

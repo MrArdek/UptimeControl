@@ -20,7 +20,8 @@
 | POST | `/api/v1/auth/login` | Вход и создание сессии | Публичный | Одинаковая ошибка для email/пароля, Origin, 10 запросов/мин на IP |
 | POST | `/api/v1/auth/logout` | Отзыв текущей сессии | Пользователь | Cookie-сессия и Origin; cookie удаляется |
 | GET | `/api/v1/auth/me` | Текущий пользователь | Пользователь | Только действующая неотозванная cookie-сессия |
-| GET | `/` | Встроенный Dashboard | Публичный экран входа | CSP, no-store; данные доступны только после auth API |
+| GET/HEAD | `/`, `/projects/*`, `/settings`, `/analytics`, `/events`, `/properties`, `/servers` | Встроенный React Dashboard и SPA fallback | Публичный экран входа | CSP без inline scripts/styles, no-store; данные доступны только после auth API |
+| GET/HEAD | `/assets/*` | Hashed frontend assets | Публичный | Только встроенные файлы, `nosniff`, immutable cache; отсутствующий asset получает `404` |
 | GET | `/api/v1/events` | SSE-снимки проектов и открытых инцидентов | Владелец | Cookie, повторная проверка сессии каждые 5 секунд, данные фильтруются по владельцу, до 50 соединений |
 | GET/POST | `/api/v1/projects` | Пагинированный список и создание проектов | Владелец | Cookie, курсор привязан к владельцу, Origin для POST |
 | GET/PATCH/DELETE | `/api/v1/projects/{projectID}` | Проект | Владелец | `project.id` и `user_id`; подтверждение удаления |

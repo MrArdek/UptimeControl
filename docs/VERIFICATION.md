@@ -166,3 +166,19 @@ node --check /tmp/uptime-dashboard.js
 ```
 
 Unit-тесты подтверждают начальный SSE-снимок, обязательную сессию и лимит 50 соединений. Dashboard использует `BASE_PATH` для адреса потока, прекращает обновления при logout/session expiry и после ошибки переключается на polling. Полный frontend build пока не существует: зависимости запрещено добавлять до GitHub issue и явного разрешения владельца.
+
+## Проверка завершённого этапа 11 — 2026-09-23
+
+```bash
+cd web
+npm ci
+npm run check
+npm run build
+npm audit --audit-level=high
+cd ..
+go test ./...
+go vet ./...
+go build ./...
+```
+
+TypeScript проверен, Vite build воспроизводится из lockfile, npm audit не нашёл известных уязвимостей. Production bundle: JavaScript 247,66 КБ / 76,65 КБ gzip, CSS 9,72 КБ / 2,99 КБ gzip. Go-тесты проверяют runtime `BASE_PATH`, refresh вложенного маршрута, раздачу hashed asset, строгую CSP и `404` для отсутствующего API.

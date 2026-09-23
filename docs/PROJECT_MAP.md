@@ -6,6 +6,18 @@
 
 ```text
 UptimeControl/
+├── web/
+│   ├── src/
+│   │   ├── App.tsx
+│   │   ├── api.ts
+│   │   ├── main.tsx
+│   │   ├── styles.css
+│   │   └── types.ts
+│   ├── index.html
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── tsconfig.json
+│   └── vite.config.ts
 ├── docs/
 │   ├── API.md
 │   ├── AI_WORKLOG.md
@@ -50,7 +62,7 @@ UptimeControl/
 │   │   ├── server_test.go
 │   │   ├── site_handlers.go
 │   │   ├── site_handlers_test.go
-│   │   └── static/index.html
+│   │   └── static/dist/
 │   ├── identity/
 │   │   ├── uuid.go
 │   │   └── uuid_test.go
@@ -156,7 +168,11 @@ UptimeControl/
 
 ### `/internal/httpserver`
 
-Создаёт HTTP-сервер, встроенный Dashboard и маршруты health, auth, projects, monitors, history, summary, notifications и heartbeat. Здесь также находятся Origin-проверка, лимит запросов и тесты.
+Создаёт HTTP-сервер, раздаёт встроенную Vite-сборку с SPA fallback и регистрирует маршруты health, auth, projects, monitors, history, summary, notifications, heartbeat и SSE. Здесь также находятся Origin-проверка, лимит запросов и тесты.
+
+### `/web`
+
+Исходники React + TypeScript Dashboard, типизированный API-клиент, адаптивные компоненты и Vite-конфигурация. `npm run build` выпускает hashed assets в `internal/httpserver/static/dist`; `package-lock.json` фиксирует воспроизводимое дерево npm.
 
 ### `/internal/postgres`
 
@@ -229,7 +245,7 @@ UptimeControl/
 | Безопасность | `docs/SECURITY.md` | Создан |
 | API | `docs/API.md` | Полное MVP API |
 | База данных | `docs/DATABASE.md` | Users, projects, monitors, checks и incidents |
-| Frontend | `internal/httpserver/static/index.html` | Встроенный адаптивный Dashboard |
+| Frontend | `web`, `internal/httpserver/static/dist` | React + TypeScript Dashboard, встроенный в Go |
 | Тесты | `internal/**/*_test.go` | Unit и PostgreSQL integration tests |
 
 ## Предлагаемая будущая структура
