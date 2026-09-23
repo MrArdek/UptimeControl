@@ -92,9 +92,6 @@ func (store *memoryStore) RevokeSession(_ context.Context, tokenHash []byte) err
 func TestRegisterAuthenticateAndLogout(t *testing.T) {
 	store := newMemoryStore()
 	service := NewService(store)
-	service.now = func() time.Time {
-		return time.Date(2026, 9, 5, 12, 0, 0, 0, time.UTC)
-	}
 
 	result, err := service.Register(context.Background(), "  USER@Example.COM ", "correct horse battery staple")
 	if err != nil {
